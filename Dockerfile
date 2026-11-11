@@ -17,4 +17,4 @@ COPY app/ ./app/
 RUN useradd --create-home botuser
 USER botuser
 
-CMD ["python", "app/main.py"]
+CMD ["python", "-m", "app.main"]

@@ -1,53 +1,35 @@
-"""Простий Telegram-бот: відповідає на /start і /help та повторює текстові повідомлення."""
+"""Мінімальний Telegram-бот на aiogram 3: відповідає на /start."""
 
+import asyncio
 import logging
 import os
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from aiogram import Bot, Dispatcher
+from aiogram.filters import CommandStart
+from aiogram.types import Message
+from dotenv import load_dotenv
 
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
-)
-# httpx логує кожен запит до Telegram, разом із токеном в адресі — приглушуємо його.
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
+# Читає змінні з файлу .env (якщо він є) у змінні середовища.
+# У Docker файлу .env немає — там BOT_TOKEN передає docker-compose.
+load_dotenv()
 
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    name = update.effective_user.first_name if update.effective_user else "друже"
-    await update.message.reply_text(
-        f"Привіт, {name}! Я твій перший бот.\n"
-        "Надішли мені будь-який текст, і я його повторю. Команди: /help"
-    )
+dp = Dispatcher()
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "/start — привітання\n"
-        "/help — ця довідка\n"
-        "Будь-який текст — я повторю його у відповідь"
-    )
+@dp.message(CommandStart())
+async def cmd_start(message: Message) -> None:
+    await message.answer("Привіт! Я твій перший бот на aiogram.")
 
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(update.message.text)
-
-
-def main() -> None:
+async def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise SystemExit("Не задано BOT_TOKEN. Додайте його у файл .env (див. .env.example).")
 
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-
-    logger.info("Бот запущено. Зупинка: Ctrl+C")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    bot = Bot(token=token)
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
