@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    container_name: first-bot
+    env_file: .env
+    restart: unless-stopped
+
+    # Режим розробки: локальна папка app підключена в контейнер,
+    # і watchfiles перезапускає бота після зміни будь-якого .py файлу в ній.
+    volumes:
+      - ./app:/bot/app
+    command: ["watchfiles", "--filter", "python", "python -m app.main", "app"]
+    environment:
+      # На Windows/WSL 2 події зміни файлів не доходять у контейнер — перевіряємо зміни опитуванням.
+      WATCHFILES_FORCE_POLLING: "true"
