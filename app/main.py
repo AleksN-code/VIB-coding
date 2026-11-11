@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 # У Docker файлу .env немає — там BOT_TOKEN передає docker-compose.
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 dp = Dispatcher()
 
 # Список команд — спільний для /start і /help.
@@ -25,11 +27,13 @@ COMMANDS_TEXT = (
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
+    logger.info("Команда /start від user_id=%s", message.from_user.id if message.from_user else None)
     await message.answer(f"Привіт! Я твій перший бот на aiogram.\n\n{COMMANDS_TEXT}")
 
 
 @dp.message(Command("help"))
 async def cmd_help(message: Message) -> None:
+    logger.info("Команда /help від user_id=%s", message.from_user.id if message.from_user else None)
     await message.answer(
         f"Я навчальний Telegram-бот, створений на aiogram 3.\n\n{COMMANDS_TEXT}"
     )
@@ -38,12 +42,17 @@ async def cmd_help(message: Message) -> None:
 async def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
+        logger.error("Не задано BOT_TOKEN — бот не може запуститися")
         raise SystemExit("Не задано BOT_TOKEN. Додайте його у файл .env (див. .env.example).")
 
     bot = Bot(token=token)
+    logger.info("Бот запускається")
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
     asyncio.run(main())
