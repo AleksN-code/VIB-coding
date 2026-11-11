@@ -31,6 +31,9 @@ services:
     volumes:
       - .:/code
     working_dir: /code
+    environment:
+      # Не створювати __pycache__ у проєкті під час завантаження плагіна
+      PYTHONDONTWRITEBYTECODE: "1"
     entrypoint: ["sh", "-c"]
     # Перевіряє тільки файли з Git (тобто без .env) і порівнює знахідки з .secrets.baseline.
     command:

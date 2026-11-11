@@ -4,11 +4,9 @@
 # Python
 __pycache__/
 *.pyc
-*.py[cod]
 .venv/
 venv/
 
-# Редактори та тимчасові файли
+# Редактори
 .vscode/
 .idea/
-_tmp_*

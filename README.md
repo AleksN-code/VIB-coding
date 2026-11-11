@@ -1,8 +1,21 @@
-Назва: # VIB-coding
-Мета: навчання основам створювання проєківи за допомогою штучного інтелекту
-Базові можливості: Отримання навичок кодінгу
-Користувач: для аналітиків
-Створення продукту
+# VIB-coding
+
+## Про проєкт
+
+**Мета:** навчитися основ створення програмних проєктів за допомогою штучного інтелекту.
+
+**Для кого:** аналітики, які хочуть отримати навички програмування.
+
+**Що дає:**
+
+- навички кодингу на практиці;
+- створення власного продукту — від налаштування середовища до робочого Telegram-бота.
+
+**Історія навчання:**
+
+- перевірка середовища (Docker, WSL 2, nginx, ngrok) — [environment-check.md](environment-check.md);
+- урок 3 — перший Telegram-бот (нижче);
+- урок 4 — логування, помилки та перевірка секретів — [Debug / Troubleshooting](#debug--troubleshooting), [DEBUG.md](DEBUG.md), [detect-secrets](#перевірка-секретів-detect-secrets).
 
 ## Урок 3: перший Telegram-бот
 
@@ -30,6 +43,8 @@
 | `.gitignore` | файли, які не повинні потрапити в Git |
 | `Dockerfile` | правила створення Docker image |
 | `docker-compose.yml` | запуск контейнера в режимі розробки з automatic restart |
+| `.dockerignore` | файли, які не передаються в Docker під час збирання образу (зокрема `.env`) |
+| `DEBUG.md` | опис помилок, які траплялися в проєкті, і як їх виправити |
 
 ### 1. Створити `.env`
 
@@ -146,6 +161,28 @@ docker compose down            # зупинити й видалити конте
 - `.env` не копіюється в Docker image: `Dockerfile` копіює лише папку `app/`.
 - Бот запускається в Docker без traceback, `/start` і `/help` відповідають у Telegram.
 - Automatic restart працює: після зміни `app/main.py` бот сам перезапускається.
+
+## Debug / Troubleshooting
+
+Спершу подивіться логи — бот пише в них старт і кожну команду:
+
+```powershell
+docker compose logs -f bot
+```
+
+Бот працює, якщо в логах є `Run polling for bot @<ваш_бот>`. Статус `running` у `docker compose ps` ще нічого не гарантує: watcher може працювати, навіть коли бот упав.
+
+| Симптом | Що зробити |
+|---|---|
+| `failed to connect to the docker API` | запустити Docker Desktop і дочекатися завантаження |
+| `TelegramUnauthorizedError: ... Unauthorized` | неправильний токен — перевірити `BOT_TOKEN` у `.env`, потім `docker compose up -d --force-recreate` |
+| `TokenValidationError: Token is invalid!` | токен у неправильному форматі — скопіювати його з @BotFather повністю |
+| `Не задано BOT_TOKEN` | створити `.env` з `.env.example` і вставити токен |
+| `KeyboardInterrupt` після збереження файлу | не помилка: watcher перезапустив бота — далі має бути `Start polling` |
+| бот не відповідає, а в логах `Conflict: terminated by other getUpdates request` | бот запущено двічі (локально і в Docker) — зупинити одну копію |
+| зміни в `.env` не діють | `restart` не перечитує `.env` — потрібен `docker compose up -d --force-recreate` |
+
+Детальний опис помилок, які траплялися в проєкті, з повідомленнями та поясненнями — у [DEBUG.md](DEBUG.md).
 
 ## Перевірка секретів (detect-secrets)
 
