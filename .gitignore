@@ -1,0 +1,14 @@
+# Секрети
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.py[cod]
+.venv/
+venv/
+
+# Редактори та тимчасові файли
+.vscode/
+.idea/
+_tmp_*
