@@ -146,3 +146,36 @@ docker compose down            # зупинити й видалити конте
 - `.env` не копіюється в Docker image: `Dockerfile` копіює лише папку `app/`.
 - Бот запускається в Docker без traceback, `/start` і `/help` відповідають у Telegram.
 - Automatic restart працює: після зміни `app/main.py` бот сам перезапускається.
+
+## Перевірка секретів (detect-secrets)
+
+[detect-secrets](https://github.com/Yelp/detect-secrets) шукає токени, паролі та ключі у файлах, які відстежує Git (`.env` у Git немає, тому не перевіряється). Запускайте перевірку перед кожним комітом.
+
+Python на ПК не потрібен: сканер запускається в Docker як окремий сервіс `secrets-scan` у `docker-compose.yml`. Разом із ботом він не стартує.
+
+| Файл | Призначення |
+|---|---|
+| `.secrets.baseline` | список уже відомих знахідок; ті, що позначені `"is_secret": false`, — хибні спрацювання |
+| `tools/detect_secrets_telegram.py` | плагін, який знаходить Telegram bot token у будь-якому місці рядка — вбудований детектор бачить токен, лише якщо той займає весь рядок, і пропускає `BOT_TOKEN = "..."` |
+
+### Перевірити проєкт
+
+```powershell
+docker compose run --rm secrets-scan
+```
+
+- `detect-secrets - нових секретів не знайдено` — усе гаразд, можна комітити.
+- `ERROR: Potential secrets about to be committed to git repo!` — знайдено новий секрет. У виводі є файл і рядок: приберіть секрет із файлу (перенесіть у `.env`). Якщо секрет уже потрапив на GitHub — відкличте його (для бота: `/revoke` у @BotFather) і створіть новий.
+
+Перший запуск довший: Docker збирає образ зі сканером.
+
+### Якщо це хибне спрацювання
+
+Наприклад, вигаданий токен у документації. Оновіть baseline і позначте знахідку як не секрет:
+
+```powershell
+docker compose run --rm secrets-scan "detect-secrets scan --baseline .secrets.baseline"
+docker compose run --rm secrets-scan "detect-secrets audit .secrets.baseline"
+```
+
+В `audit` на кожну знахідку відповідайте `n` (це не секрет) або `y` (це справжній секрет — його треба прибрати з файлу). Після цього закомітьте оновлений `.secrets.baseline`.
