@@ -1,11 +1,11 @@
-"""Мінімальний Telegram-бот на aiogram 3: відповідає на /start."""
+"""Мінімальний Telegram-бот на aiogram 3: відповідає на /start і /help."""
 
 import asyncio
 import logging
 import os
 
 from aiogram import Bot, Dispatcher
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
 
@@ -15,10 +15,24 @@ load_dotenv()
 
 dp = Dispatcher()
 
+# Список команд — спільний для /start і /help.
+COMMANDS_TEXT = (
+    "Доступні команди:\n"
+    "/start — привітання і список команд\n"
+    "/help — що вміє бот і які команди доступні"
+)
+
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer("Привіт! Я твій перший бот на aiogram.")
+    await message.answer(f"Привіт! Я твій перший бот на aiogram.\n\n{COMMANDS_TEXT}")
+
+
+@dp.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.answer(
+        f"Я навчальний Telegram-бот, створений на aiogram 3.\n\n{COMMANDS_TEXT}"
+    )
 
 
 async def main() -> None:
