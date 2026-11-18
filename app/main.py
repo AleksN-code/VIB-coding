@@ -9,6 +9,8 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
 
+from app import db
+
 # Читає змінні з файлу .env (якщо він є) у змінні середовища.
 # У Docker файлу .env немає — там BOT_TOKEN передає docker-compose.
 load_dotenv()
@@ -45,9 +47,20 @@ async def main() -> None:
         logger.error("Не задано BOT_TOKEN — бот не може запуститися")
         raise SystemExit("Не задано BOT_TOKEN. Додайте його у файл .env (див. .env.example).")
 
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        logger.error("Не задано DATABASE_URL — бот не може підключитися до бази")
+        raise SystemExit("Не задано DATABASE_URL. Додайте його у файл .env (див. .env.example).")
+
+    db.setup_engine(database_url)
+    await db.init_db()
+
     bot = Bot(token=token)
     logger.info("Бот запускається")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await db.close_db()
 
 
 if __name__ == "__main__":
