@@ -7,7 +7,9 @@
     React-форма → цей API → перевірка (app/rules.py, app/services.py) → SQLAlchemy → Neon
 Ту саму перевірку й логіку використовує Telegram-бот.
 
-Авторизації поки немає, тому API доступний лише на цьому ПК (127.0.0.1).
+Доступ — лише після входу паролем ADMIN_PASSWORD (api/auth.py): без сесії кожен /api/...
+(крім /api/health, /api/login, /api/logout) відповідає 401. Це базовий навчальний захист,
+тому API однаково доступний лише на цьому ПК (127.0.0.1).
 
 Документація й перевірка в браузері: http://localhost:8000/docs
 """
@@ -30,6 +32,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api import auth
 from api.car_images import find_car_image
 from app import db, services
 from app.errors import AppError, ConflictError, NotFoundError, RateUnavailableError, ValidationError
@@ -53,6 +56,8 @@ async def lifespan(_: FastAPI):
         raise RuntimeError("Не задано DATABASE_URL. Додайте його у файл .env (див. .env.example).")
     db.setup_engine(database_url)
     await db.check_db()
+    # Пароль адмінки — лише з .env; якщо його немає, вхід закрито для всіх
+    auth.configure(os.getenv("ADMIN_PASSWORD"))
     yield
     await db.close_db()
 
@@ -94,7 +99,27 @@ FIELD_ERRORS = {
     "year": "Рік випуску має бути числом, наприклад 2018.",
     "vin": "VIN має бути текстом.",
     "limit": "limit — ціле число від 1 до 500.",
+    "password": "Введіть пароль.",
 }
+
+
+# ---------- Захист: без входу — лише /api/health ----------
+
+# Адреси, доступні без входу. Усі інші /api/... — тільки з дійсною сесією,
+# тож нові endpoint-и захищені автоматично, навіть якщо про це забути.
+PUBLIC_PATHS = {"/api/health", "/api/login", "/api/logout"}
+
+
+@app.middleware("http")
+async def require_admin_session(request: Request, call_next):
+    path = request.url.path
+    if (
+        path.startswith("/api/")
+        and path not in PUBLIC_PATHS
+        and not auth.session_valid(request.cookies.get(auth.COOKIE_NAME))
+    ):
+        return JSONResponse(status_code=401, content={"detail": "Потрібно увійти в адмінку."})
+    return await call_next(request)
 
 
 @app.exception_handler(AppError)
@@ -241,10 +266,57 @@ class CarOut(BaseModel):
 # ---------- Endpoint-и ----------
 
 
-@app.get("/api/health", summary="Чи працює API і чи доступна база")
+@app.get("/api/health", summary="Чи працює API і чи доступна база (без входу)")
 async def health() -> dict:
     await db.check_db()
     return {"status": "ok"}
+
+
+class LoginIn(BaseModel):
+    password: str = Field(description="Пароль адмінки — значення ADMIN_PASSWORD з .env")
+
+
+@app.post(
+    "/api/login",
+    status_code=204,
+    summary="Вхід в адмінку",
+    description="Правильний пароль — сесія в cookie (HttpOnly) на 12 годин.",
+    responses={
+        401: {"description": "Неправильний пароль"},
+        429: {"description": "Забагато невдалих спроб — зачекайте хвилину"},
+        503: {"description": "ADMIN_PASSWORD не задано в .env"},
+    },
+)
+async def login(body: LoginIn) -> Response:
+    if auth.problem():
+        return JSONResponse(status_code=503, content={"detail": auth.problem()})
+    if auth.too_many_attempts():
+        return JSONResponse(
+            status_code=429, content={"detail": "Забагато невдалих спроб. Зачекайте хвилину й спробуйте ще раз."}
+        )
+    if not auth.check_password(body.password):
+        await asyncio.sleep(1)  # уповільнюємо підбір пароля
+        return JSONResponse(status_code=401, content={"detail": "Неправильний пароль."})
+
+    response = Response(status_code=204)
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        auth.new_session(),
+        max_age=auth.SESSION_SECONDS,
+        httponly=True,  # JavaScript сторінки cookie не бачить
+        samesite="strict",  # інші сайти не можуть надіслати запит з цим cookie
+        path="/api",
+        # secure=True — коли адмінка працюватиме через HTTPS (наприклад, на Render)
+    )
+    logger.info("Вхід в адмінку")
+    return response
+
+
+@app.post("/api/logout", status_code=204, summary="Вийти з адмінки")
+async def logout() -> Response:
+    response = Response(status_code=204)
+    response.delete_cookie(auth.COOKIE_NAME, path="/api", httponly=True, samesite="strict")
+    return response
 
 
 @app.get(

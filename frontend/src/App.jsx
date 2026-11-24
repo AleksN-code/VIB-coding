@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { fetchCars, fetchCategories, fetchSummary, fetchTransactions, fetchUsers } from "./api.js";
+import {
+  AUTH_REQUIRED_EVENT,
+  fetchCars,
+  fetchCategories,
+  fetchSummary,
+  fetchTransactions,
+  fetchUsers,
+  login,
+  logout,
+} from "./api.js";
 import CarForm from "./CarForm.jsx";
 import DeleteCarDialog from "./DeleteCarDialog.jsx";
 import DeleteTransactionDialog from "./DeleteTransactionDialog.jsx";
@@ -54,6 +63,8 @@ export default function App() {
   const [carDialog, setCarDialog] = useState(null); // null | { car: null | {...} }
   const [deletingCar, setDeletingCar] = useState(null);
   const [notice, setNotice] = useNotice();
+  // true — backend відповів 401: показуємо екран входу замість даних
+  const [authRequired, setAuthRequired] = useState(false);
   const [loadedAt, setLoadedAt] = useState(null);
   // Лічильник оновлень: після «Оновити» вкладка авто заново завантажує свої операції
   const [reloadKey, setReloadKey] = useState(0);
@@ -91,6 +102,29 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  // Будь-який запит отримав 401 (немає входу або сесія закінчилась) — показати екран входу
+  useEffect(() => {
+    const onAuthRequired = () => {
+      setCarDialog(null);
+      setDeletingCar(null);
+      setAuthRequired(true);
+    };
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // навіть якщо backend недоступний — ховаємо дані й показуємо вхід
+    }
+    setSummary(null);
+    setCars([]);
+    setUsers([]);
+    setAuthRequired(true);
+  }
+
   // Якщо в адресі немає авто або такого вже немає — відкриваємо перше
   const selectedCar = cars.find((car) => car.id === selectedId) ?? cars[0] ?? null;
 
@@ -118,6 +152,17 @@ export default function App() {
     load();
   }
 
+  if (authRequired) {
+    return (
+      <LoginScreen
+        onLoggedIn={() => {
+          setAuthRequired(false);
+          load();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="page">
       <header className="header">
@@ -131,10 +176,16 @@ export default function App() {
           </div>
         </div>
         {summary && <OverallLine summary={summary} carsCount={cars.length} loadedAt={loadedAt} />}
-        <button className="button" onClick={load} disabled={status === "loading"}>
-          <Icon name="refresh" className={status === "loading" ? "spin" : ""} />
-          {status === "loading" ? "Оновлення…" : "Оновити"}
-        </button>
+        <div className="header-actions">
+          <button className="button" onClick={load} disabled={status === "loading"}>
+            <Icon name="refresh" className={status === "loading" ? "spin" : ""} />
+            {status === "loading" ? "Оновлення…" : "Оновити"}
+          </button>
+          <button className="button button-ghost" onClick={handleLogout} title="Вийти з адмінки">
+            <Icon name="logout" />
+            Вийти
+          </button>
+        </div>
       </header>
 
       {status === "error" && <ErrorBox message={error} onRetry={load} />}
@@ -179,6 +230,74 @@ export default function App() {
       {deletingCar && (
         <DeleteCarDialog car={deletingCar} onClose={() => setDeletingCar(null)} onDeleted={handleCarDeleted} />
       )}
+    </div>
+  );
+}
+
+// Екран входу: пароль іде лише в POST /api/login; у браузері він не зберігається.
+// Backend у відповідь ставить cookie сесії (HttpOnly), далі браузер додає його сам.
+function LoginScreen({ onLoggedIn }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inputId = useId();
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!password) {
+      setError("Введіть пароль.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await login(password);
+      setPassword("");
+      onLoggedIn();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="login-page">
+      <form className="login-card" onSubmit={submit} noValidate>
+        <span className="logo" aria-hidden="true">
+          <LogoMark />
+        </span>
+        <h1>Car Finance</h1>
+        <p className="subtitle">Вхід в адмінку</p>
+
+        <div className="field">
+          <label htmlFor={inputId}>Пароль</label>
+          <input
+            id={inputId}
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+            value={password}
+            aria-invalid={error ? "true" : undefined}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+            }}
+          />
+        </div>
+
+        {error && (
+          <div className="form-error" role="alert">
+            <Icon name="warning" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <button type="submit" className="button button-primary login-button" disabled={busy}>
+          <Icon name="lock" />
+          {busy ? "Перевірка…" : "Увійти"}
+        </button>
+        <p className="muted login-note">Пароль задається у файлі .env — змінна ADMIN_PASSWORD.</p>
+      </form>
     </div>
   );
 }

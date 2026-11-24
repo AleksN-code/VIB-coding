@@ -705,6 +705,65 @@ tbody tr:hover {
   padding-left: 20px;
 }
 
+/* ---- Кнопки в шапці: Оновити · Вийти ---- */
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ---- Екран входу ---- */
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px 16px;
+  place-items: center;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(400px, 100%);
+  padding: 32px 28px 26px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(rgba(14, 18, 36, 0.85), rgba(14, 18, 36, 0.85)) padding-box,
+    linear-gradient(120deg, rgba(34, 211, 238, 0.8), rgba(167, 139, 250, 0.8), rgba(244, 114, 182, 0.8)) border-box;
+  box-shadow: 0 0 30px rgba(167, 139, 250, 0.25), 0 0 80px rgba(34, 211, 238, 0.12);
+  backdrop-filter: blur(14px);
+  animation: fade-in 0.4s ease-out;
+}
+
+.login-card .logo {
+  align-self: center;
+}
+
+.login-card h1 {
+  font-size: 40px;
+  text-align: center;
+}
+
+.login-card .subtitle {
+  margin: -8px 0 4px;
+  text-align: center;
+}
+
+.login-button {
+  justify-content: center;
+  padding: 12px 18px;
+}
+
+.login-note {
+  margin: 0;
+  font-size: 12.5px;
+  text-align: center;
+}
+
 /* ---- Кнопки дій ---- */
 
 /* головна дія (Додати, Зберегти) — заповнена, з неоновою рамкою-градієнтом */
@@ -1296,6 +1355,10 @@ textarea {
   .overall {
     grid-row: auto;
     justify-self: stretch;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
   }
 
   h1 {
