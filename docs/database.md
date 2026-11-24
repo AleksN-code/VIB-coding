@@ -80,7 +80,7 @@
 | Поле | Тип | Обов'язкове | Опис |
 |---|---|---|---|
 | `id` | bigint | так | номер операції |
-| `user_id` | bigint | так | → `users.id`, хто записав |
+| `user_id` | bigint | так | → `users.id`, власник авто: операція належить тому, хто веде облік цього авто — і коли записана в боті, і в адмінці; якщо в адмінці змінити власника авто, його операції переходять разом з ним |
 | `car_id` | bigint | ні | → `cars.id`, до якого авто належить; порожнє — загальна операція (бот зараз завжди просить обрати авто) |
 | `category_id` | integer | так | → `categories.id`, категорія (а з нею — дохід чи витрата) |
 | `operation_date` | date | так | **коли операція відбулася**; може бути раніше за `created_at` («заднім числом»), але не в майбутньому |
@@ -185,7 +185,7 @@ Table categories {
 
 Table transactions {
   id bigint [pk, increment]
-  user_id bigint [not null, ref: > users.id, note: 'хто записав операцію']
+  user_id bigint [not null, ref: > users.id, note: 'власник авто, до якого належить операція']
   car_id bigint [ref: > cars.id, note: 'до якого авто належить; порожнє — загальна операція']
   category_id integer [not null, ref: > categories.id, note: 'категорія — визначає дохід чи витрата']
   operation_date date [not null, note: 'коли операція відбулася']
