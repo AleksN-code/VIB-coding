@@ -31,6 +31,29 @@ services:
       # На Windows/WSL 2 події зміни файлів не доходять у контейнер — перевіряємо зміни опитуванням.
       WATCHFILES_FORCE_POLLING: "true"
 
+  # Backend API для web-адмінки (FastAPI): http://localhost:8000/docs
+  api:
+    build: .
+    container_name: admin-api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # API потрібен лише DATABASE_URL (без BOT_TOKEN) — Docker Compose бере значення з .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      WATCHFILES_FORCE_POLLING: "true"
+    # Режим розробки: зміни в app/ та api/ підхоплюються без перезбирання образу
+    volumes:
+      - ./app:/bot/app
+      - ./api:/bot/api
+    command:
+      ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000",
+       "--reload", "--reload-dir", "api", "--reload-dir", "app"]
+    # Лише на цьому ПК: 127.0.0.1 — з інших пристроїв у мережі API недоступний
+    ports:
+      - "127.0.0.1:8000:8000"
+
   # Пошук секретів (токенів, паролів) у файлах, які відстежує Git.
   # Не запускається разом із ботом — тільки вручну:
   #   docker compose run --rm secrets-scan
