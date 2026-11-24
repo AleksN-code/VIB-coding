@@ -73,7 +73,7 @@ COMMANDS_TEXT = (
     f"{BTN_EXPENSE} — витрата на авто\n"
     f"{BTN_SALE} — дохід від продажу\n"
     f"{BTN_CARS} — витрати, продаж і прибуток по кожному авто; "
-    "там же можна змінити чи видалити операцію\n"
+    "там же можна змінити чи видалити авто та його операції\n"
     f"{BTN_HELP}\n\n"
     "Скасувати будь-яку дію — /cancel"
 )
@@ -327,7 +327,8 @@ async def cmd_help(message: Message, state: FSMContext) -> None:
         f"3. {BTN_SALE} — авто → дата продажу → валюта → сума.\n"
         f"4. {BTN_CARS} — витрати, продаж і прибуток по кожному авто.\n"
         f"5. Змінити чи видалити операцію: {BTN_CARS} → авто → «📄 Операції» → операція → "
-        "«✏️ Змінити» або «🗑 Видалити».\n\n"
+        "«✏️ Змінити» або «🗑 Видалити».\n"
+        f"6. Змінити чи видалити авто: {BTN_CARS} → авто → «✏️ Змінити авто» або «🗑 Видалити авто».\n\n"
         "Суму можна вводити в гривнях або доларах — друга валюта рахується "
         "за офіційним курсом НБУ на дату операції.\n\n"
         "Скасувати будь-яку дію — /cancel",
@@ -678,11 +679,17 @@ NOT_FOUND_TX = "Операцію не знайдено — можливо, її 
 
 
 class CarCb(CallbackData, prefix="car"):
-    """Кнопки авто. action: list — усі авто, show — картка авто, ops — операції (offset — сторінка)."""
+    """Кнопки авто.
+
+    action: list — усі авто, show — картка авто, ops — операції (offset — сторінка),
+    edit / field / cancel — зміна авто (value — поле), del / delok — видалення.
+    """
 
     action: str
     car_id: int = 0
     offset: int = 0
+    # Порожнє значення aiogram читає як None, тому тип — «текст або None»
+    value: str | None = None
 
 
 class TxCb(CallbackData, prefix="tx"):
@@ -781,8 +788,10 @@ async def car_view(tg_user: TgUser, car_id: int):
 
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text=f"📄 Операції ({count})", callback_data=CarCb(action="ops", car_id=car.id))
+    keyboard.button(text="✏️ Змінити авто", callback_data=CarCb(action="edit", car_id=car.id))
+    keyboard.button(text="🗑 Видалити авто", callback_data=CarCb(action="del", car_id=car.id))
     keyboard.button(text="⬅️ Усі авто", callback_data=CarCb(action="list"))
-    keyboard.adjust(1)
+    keyboard.adjust(1, 2, 1)
     return car_card(car, summary), keyboard.as_markup()
 
 
@@ -982,6 +991,232 @@ async def car_ops_button(callback: CallbackQuery, callback_data: CarCb, state: F
         return
     await safe_edit(callback.message, *view)
     await callback.answer()
+
+
+# --- Авто: зміна й видалення ---
+
+
+class EditCarForm(StatesGroup):
+    """Зміна авто: бот чекає нове значення текстом."""
+
+    entering_name = State()
+    entering_year = State()
+    entering_vin = State()
+
+
+def plural_uk(n: int, one: str, few: str, many: str) -> str:
+    """1 операцію, 3 операції, 5 операцій (11–14 — завжди «many»)."""
+    if n % 10 == 1 and n % 100 != 11:
+        return f"{n} {one}"
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return f"{n} {few}"
+    return f"{n} {many}"
+
+
+CAR_SAVED_HEADER = {
+    "name": "✅ Марку й модель змінено",
+    "year": "✅ Рік змінено",
+    "vin": "✅ VIN змінено",
+}
+
+
+async def car_edit_view(tg_user: TgUser, car_id: int, header: str | None = None):
+    """Картка авто з вибором, що змінити. None — авто немає або воно чуже."""
+    async with db.session_factory() as session:
+        user = await get_db_user(session, tg_user)
+        car = await crud.get_car(session, car_id, owner_id=user.id)
+        if car is None:
+            return None
+        summary = await crud.car_summary(session, car.id)
+        await session.commit()
+
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🏷 Марка й модель", callback_data=CarCb(action="field", car_id=car_id, value="name"))
+    keyboard.button(text="📅 Рік", callback_data=CarCb(action="field", car_id=car_id, value="year"))
+    keyboard.button(text="🔖 VIN", callback_data=CarCb(action="field", car_id=car_id, value="vin"))
+    keyboard.button(text="✅ Готово", callback_data=CarCb(action="show", car_id=car_id))
+    keyboard.adjust(1, 2, 1)
+
+    text = f"{car_card(car, summary)}\n\n✏️ Що змінити в авто?\nВласника авто можна змінити на сайті."
+    if header:
+        text = f"{header}\n\n{text}"
+    return text, keyboard.as_markup()
+
+
+async def update_car_fields(tg_user: TgUser, car_id: int, **changes) -> str | None:
+    """Зберігає зміну авто через спільну логіку: решта полів — як були. Повертає текст помилки або None."""
+    async with db.session_factory() as session:
+        user = await get_db_user(session, tg_user)
+        car = await crud.get_car(session, car_id, owner_id=user.id)
+        if car is None:
+            return NOT_FOUND_CAR
+        values = {"brand": car.brand, "model": car.model, "year": car.year, "vin": car.vin}
+        values.update(changes)
+        try:
+            await services.update_car(session, car_id, owner_id=user.id, **values)
+        except AppError as error:
+            return error.message
+        await session.commit()
+    logger.info("Змінено авто car_id=%s (%s) від user_id=%s", car_id, ", ".join(changes), tg_user.id)
+    return None
+
+
+def cancel_car_edit_markup(car_id: int):
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✖ Скасувати", callback_data=CarCb(action="cancel", car_id=car_id))
+    return keyboard.as_markup()
+
+
+async def answer_car_saved(message: Message, car_id: int, field: str) -> None:
+    view = await car_edit_view(message.from_user, car_id, header=CAR_SAVED_HEADER[field])
+    if view is None:
+        await message.answer(NOT_FOUND_CAR)
+        return
+    await message.answer(view[0], reply_markup=view[1])
+
+
+@dp.callback_query(CarCb.filter(F.action.in_({"edit", "cancel"})))
+async def car_edit_button(callback: CallbackQuery, callback_data: CarCb, state: FSMContext) -> None:
+    """Меню «що змінити в авто» (cancel — скасувати введення тексту)."""
+    await state.clear()
+    view = await car_edit_view(callback.from_user, callback_data.car_id)
+    if view is None:
+        await callback.answer(NOT_FOUND_CAR, show_alert=True)
+        return
+    await safe_edit(callback.message, *view)
+    await callback.answer()
+
+
+CAR_FIELD_PROMPTS = {
+    "name": (
+        EditCarForm.entering_name,
+        "🏷 Надішліть марку й модель, без року, наприклад:\nMercedes-Benz G 500\n\n"
+        "Марка — перше слово (якщо з двох слів — через дефіс: Land-Rover).",
+    ),
+    "year": (EditCarForm.entering_year, "📅 Надішліть рік випуску, наприклад 2018"),
+    "vin": (
+        EditCarForm.entering_vin,
+        "🔖 Надішліть VIN — 17 символів: латинські літери (без I, O, Q) і цифри.\n"
+        "Щоб прибрати VIN — надішліть «-».",
+    ),
+}
+
+
+@dp.callback_query(CarCb.filter(F.action == "field"))
+async def car_field_button(callback: CallbackQuery, callback_data: CarCb, state: FSMContext) -> None:
+    """Вибрано поле авто — просимо надіслати нове значення текстом."""
+    if callback_data.value not in CAR_FIELD_PROMPTS:
+        await callback.answer("Це поле змінити не можна.", show_alert=True)
+        return
+    view = await car_view(callback.from_user, callback_data.car_id)
+    if view is None:
+        await callback.answer(NOT_FOUND_CAR, show_alert=True)
+        return
+    form_state, prompt = CAR_FIELD_PROMPTS[callback_data.value]
+    await state.set_state(form_state)
+    await state.update_data(car_id=callback_data.car_id)
+    await safe_edit(callback.message, f"{view[0]}\n\n{prompt}", cancel_car_edit_markup(callback_data.car_id))
+    await callback.answer()
+
+
+async def save_car_field(message: Message, state: FSMContext, field: str, **changes) -> None:
+    """Спільне для тексту: зберегти; при помилці — лишитися на кроці, щоб можна було виправити."""
+    car_id = (await state.get_data())["car_id"]
+    error = await update_car_fields(message.from_user, car_id, **changes)
+    if error:
+        await message.answer(f"⚠️ {error}", reply_markup=cancel_car_edit_markup(car_id))
+        return
+    await state.clear()
+    await answer_car_saved(message, car_id, field)
+
+
+@dp.message(EditCarForm.entering_name, F.text, ~F.text.startswith("/"), ~F.text.in_(MENU_BUTTONS))
+async def car_enter_name(message: Message, state: FSMContext) -> None:
+    parts = message.text.split()
+    if len(parts) < 2:
+        car_id = (await state.get_data())["car_id"]
+        await message.answer(
+            "Напишіть марку й модель через пробіл, наприклад: BMW X5",
+            reply_markup=cancel_car_edit_markup(car_id),
+        )
+        return
+    await save_car_field(message, state, "name", brand=parts[0], model=" ".join(parts[1:]))
+
+
+@dp.message(EditCarForm.entering_year, F.text, ~F.text.startswith("/"), ~F.text.in_(MENU_BUTTONS))
+async def car_enter_year(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if not (text.isdigit() and len(text) == 4):
+        car_id = (await state.get_data())["car_id"]
+        await message.answer("Напишіть рік чотирма цифрами, наприклад 2018", reply_markup=cancel_car_edit_markup(car_id))
+        return
+    await save_car_field(message, state, "year", year=int(text))
+
+
+@dp.message(EditCarForm.entering_vin, F.text, ~F.text.startswith("/"), ~F.text.in_(MENU_BUTTONS))
+async def car_enter_vin(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    await save_car_field(message, state, "vin", vin=None if text == "-" else text)
+
+
+@dp.callback_query(CarCb.filter(F.action == "del"))
+async def car_delete_button(callback: CallbackQuery, callback_data: CarCb, state: FSMContext) -> None:
+    """Підтвердження видалення авто: показуємо, скільки операцій зникне разом з ним."""
+    await state.clear()
+    async with db.session_factory() as session:
+        user = await get_db_user(session, callback.from_user)
+        car = await crud.get_car(session, callback_data.car_id, owner_id=user.id)
+        if car is None:
+            await callback.answer(NOT_FOUND_CAR, show_alert=True)
+            return
+        summary = await crud.car_summary(session, car.id)
+        count = await crud.count_car_transactions(session, car.id)
+        await session.commit()
+
+    lines = ["🗑 Видалити авто?", "", car_card(car, summary), ""]
+    if count:
+        what = "витрати й продаж" if summary.sold else "усі витрати по ньому"
+        lines.append(f"⚠️ Разом з авто буде видалено {plural_uk(count, 'операцію', 'операції', 'операцій')} — {what}.")
+        if summary.sold:
+            lines.append("Прибуток по цьому авто теж зникне.")
+    else:
+        lines.append("Операцій по цьому авто немає.")
+    lines.append("Авто зникне і з бота, і з сайту. Скасувати це неможливо.")
+
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🗑 Так, видалити авто", callback_data=CarCb(action="delok", car_id=car.id))
+    keyboard.button(text="✖ Скасувати", callback_data=CarCb(action="show", car_id=car.id))
+    keyboard.adjust(1)
+    await safe_edit(callback.message, "\n".join(lines), keyboard.as_markup())
+    await callback.answer()
+
+
+@dp.callback_query(CarCb.filter(F.action == "delok"))
+async def car_delete_confirmed(callback: CallbackQuery, callback_data: CarCb) -> None:
+    async with db.session_factory() as session:
+        user = await get_db_user(session, callback.from_user)
+        car = await crud.get_car(session, callback_data.car_id, owner_id=user.id)
+        if car is None:
+            await callback.answer(NOT_FOUND_CAR, show_alert=True)
+            return
+        title = car_title(car)
+        try:
+            removed = await services.delete_car(session, car.id, owner_id=user.id)
+        except AppError as error:
+            await callback.answer(error.message, show_alert=True)
+            return
+        await session.commit()
+
+    logger.info(
+        "Видалено авто car_id=%s разом з %s операціями від user_id=%s",
+        callback_data.car_id, removed, callback.from_user.id,
+    )
+    text = f"✅ Авто {title} видалено"
+    text += f" разом з {plural_uk(removed, 'операцією', 'операціями', 'операціями')}." if removed else "."
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="⬅️ Усі авто", callback_data=CarCb(action="list"))
+    await safe_edit(callback.message, text, keyboard.as_markup())
+    await callback.answer("Видалено")
 
 
 # --- Операція: перегляд і меню змін ---
@@ -1230,6 +1465,12 @@ async def tx_delete_confirmed(callback: CallbackQuery, callback_data: TxCb) -> N
         callback.message, f"{done}\n\n📊 Підсумок по авто\n{car_card(car, summary)}", keyboard.as_markup()
     )
     await callback.answer("Видалено")
+
+
+@dp.callback_query()
+async def outdated_button(callback: CallbackQuery) -> None:
+    """Кнопка, яку не впізнав жоден обробник: наприклад, зі старого повідомлення після оновлення бота."""
+    await callback.answer("Ця кнопка вже не діє. Відкрийте «📋 Мої авто» ще раз.", show_alert=True)
 
 
 @dp.message()
