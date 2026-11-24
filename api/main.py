@@ -6,6 +6,7 @@
 Документація й перевірка в браузері: http://localhost:8000/docs
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from pydantic import BaseModel, PlainSerializer
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from api.car_images import find_car_image
 from app import db
 from app.models import EXPENSE, INCOME, Car, Category, Transaction
 
@@ -90,6 +92,26 @@ class SummaryOut(BaseModel):
     transactions_count: int
 
 
+class CarOut(BaseModel):
+    id: int
+    title: str
+    brand: str
+    model: str
+    year: int
+    vin: str | None
+    sold: bool
+    sale_date: date | None
+    expenses: MoneyOut
+    income: MoneyOut
+    # Прибуток рахуємо лише після продажу: до того це просто вкладені гроші
+    profit: MoneyOut | None
+    transactions_count: int
+    # Фото моделі з Вікіпедії (може бути відсутнім)
+    image_url: str | None
+    image_page_title: str | None
+    image_page_url: str | None
+
+
 # ---------- Endpoint-и ----------
 
 
@@ -107,6 +129,7 @@ async def health() -> dict:
 )
 async def list_transactions(
     limit: Annotated[int, Query(ge=1, le=500, description="Скільки операцій повернути")] = 100,
+    car_id: Annotated[int | None, Query(description="Лише операції цього авто")] = None,
 ) -> list[TransactionOut]:
     stmt = (
         select(Transaction, Category, Car)
@@ -115,6 +138,8 @@ async def list_transactions(
         .order_by(Transaction.operation_date.desc(), Transaction.id.desc())
         .limit(limit)
     )
+    if car_id is not None:
+        stmt = stmt.where(Transaction.car_id == car_id)
     async with db.session_factory() as session:
         rows = (await session.execute(stmt)).all()
 
@@ -171,3 +196,68 @@ async def summary() -> SummaryOut:
         balance=MoneyOut(uah=income_uah - expense_uah, usd=income_usd - expense_usd),
         transactions_count=count,
     )
+
+
+@app.get(
+    "/api/cars",
+    response_model=list[CarOut],
+    summary="Авто з окремою калькуляцією",
+    description=(
+        "Кожне авто — окремо: свої витрати, дохід від продажу і прибуток. "
+        "Операції авто — GET /api/transactions?car_id=<id>."
+    ),
+)
+async def list_cars() -> list[CarOut]:
+    totals_stmt = (
+        select(
+            Transaction.car_id,
+            Category.type,
+            func.coalesce(func.sum(Transaction.amount_uah), 0),
+            func.coalesce(func.sum(Transaction.amount_usd), 0),
+            func.count(Transaction.id),
+            func.max(Transaction.operation_date),
+        )
+        .join(Category, Category.id == Transaction.category_id)
+        .where(Transaction.car_id.is_not(None))
+        .group_by(Transaction.car_id, Category.type)
+    )
+    async with db.session_factory() as session:
+        cars = (await session.scalars(select(Car).order_by(Car.id))).all()
+        totals_rows = (await session.execute(totals_stmt)).all()
+
+    # {car_id: {type: (uah, usd, count, last_date)}}
+    totals: dict[int, dict[str, tuple]] = {}
+    for car_id, type_, total_uah, total_usd, n, last_date in totals_rows:
+        totals.setdefault(car_id, {})[type_] = (Decimal(total_uah), Decimal(total_usd), n, last_date)
+
+    # Картинки з Вікіпедії — паралельно; кешуються, тож повільним буде лише перший запит
+    images = await asyncio.gather(
+        *(asyncio.to_thread(find_car_image, car.brand, car.model) for car in cars)
+    )
+
+    result = []
+    for car, image in zip(cars, images):
+        car_totals = totals.get(car.id, {})
+        exp_uah, exp_usd, exp_n, _ = car_totals.get(EXPENSE, (Decimal(0), Decimal(0), 0, None))
+        inc_uah, inc_usd, inc_n, sale_date = car_totals.get(INCOME, (Decimal(0), Decimal(0), 0, None))
+        sold = inc_n > 0
+        result.append(
+            CarOut(
+                id=car.id,
+                title=f"{car.brand} {car.model} {car.year}",
+                brand=car.brand,
+                model=car.model,
+                year=car.year,
+                vin=car.vin,
+                sold=sold,
+                sale_date=sale_date,
+                expenses=MoneyOut(uah=exp_uah, usd=exp_usd),
+                income=MoneyOut(uah=inc_uah, usd=inc_usd),
+                profit=MoneyOut(uah=inc_uah - exp_uah, usd=inc_usd - exp_usd) if sold else None,
+                transactions_count=exp_n + inc_n,
+                image_url=image.url if image else None,
+                image_page_title=image.page_title if image else None,
+                image_page_url=image.page_url if image else None,
+            )
+        )
+    return result

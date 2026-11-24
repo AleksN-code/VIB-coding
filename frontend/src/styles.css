@@ -1,0 +1,799 @@
+/* Темна тема з легким неоновим підсвіченням */
+
+:root {
+  --bg: #090d18;
+  --surface: rgba(18, 24, 42, 0.72);
+  --surface-strong: rgba(24, 31, 54, 0.9);
+  --border: rgba(124, 140, 255, 0.16);
+  --text: #e9edfb;
+  --muted: #8c96b4;
+
+  /* неонові акценти */
+  --cyan: #22d3ee;
+  --violet: #a78bfa;
+  --pink: #f472b6;
+  --income: #34f5a4;
+  --expense: #ff6b9a;
+  --warning: #fbbf24;
+
+  --radius: 16px;
+  --glow-cyan: 0 0 0 1px rgba(34, 211, 238, 0.35), 0 0 22px rgba(34, 211, 238, 0.18);
+  --glow-violet: 0 0 0 1px rgba(167, 139, 250, 0.4), 0 0 26px rgba(167, 139, 250, 0.22);
+
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 700px at 0% 0%, rgba(124, 58, 237, 0.45), transparent 60%),
+    radial-gradient(1000px 650px at 100% 0%, rgba(6, 182, 212, 0.32), transparent 60%),
+    radial-gradient(900px 700px at 100% 100%, rgba(236, 72, 153, 0.3), transparent 60%),
+    radial-gradient(900px 700px at 0% 100%, rgba(37, 99, 235, 0.32), transparent 60%),
+    linear-gradient(160deg, #0b0820 0%, #070b1a 50%, #0a0618 100%);
+  background-attachment: fixed;
+}
+
+/* «полярне сяйво»: розмиті кольорові плями, що дуже повільно пливуть */
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  background:
+    radial-gradient(35% 30% at 25% 30%, rgba(167, 139, 250, 0.35), transparent 70%),
+    radial-gradient(30% 28% at 75% 35%, rgba(34, 211, 238, 0.28), transparent 70%),
+    radial-gradient(32% 30% at 55% 80%, rgba(244, 114, 182, 0.26), transparent 70%);
+  filter: blur(60px);
+  animation: aurora 28s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+/* ледь помітна сітка на фоні */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(124, 140, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 140, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  pointer-events: none;
+}
+
+a {
+  color: var(--cyan);
+}
+
+code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(124, 140, 255, 0.12);
+  font-size: 13px;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 16px 56px;
+  animation: fade-in 0.4s ease-out;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---- Іконки: тонкі лінії кольору тексту поруч + легке неонове світіння ---- */
+
+.icon {
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 70%, transparent));
+}
+
+.icon.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ---- Шапка ---- */
+
+/* шапка — скляна панель з неоновою рамкою-градієнтом */
+.header {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* назва · загальні цифри · кнопка */
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 22px 26px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(rgba(14, 18, 36, 0.78), rgba(14, 18, 36, 0.78)) padding-box,
+    linear-gradient(120deg, rgba(34, 211, 238, 0.8), rgba(167, 139, 250, 0.8), rgba(244, 114, 182, 0.8)) border-box;
+  box-shadow: 0 0 30px rgba(167, 139, 250, 0.25), 0 0 80px rgba(34, 211, 238, 0.12),
+    inset 0 0 40px rgba(167, 139, 250, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.logo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(rgba(12, 14, 32, 0.92), rgba(12, 14, 32, 0.92)) padding-box,
+    linear-gradient(135deg, #22d3ee, #a78bfa, #f472b6) border-box;
+  box-shadow: 0 0 22px rgba(167, 139, 250, 0.45), 0 0 46px rgba(34, 211, 238, 0.2),
+    inset 0 0 18px rgba(167, 139, 250, 0.18);
+}
+
+.logo svg {
+  filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.9)) drop-shadow(0 0 10px rgba(34, 211, 238, 0.45));
+}
+
+h1 {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 850;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  background: linear-gradient(90deg, #67e8f9, #a78bfa, #f472b6, #a78bfa, #67e8f9);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(167, 139, 250, 0.55)) drop-shadow(0 0 36px rgba(34, 211, 238, 0.25));
+  animation: shimmer 8s linear infinite;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  color: #aeb7d6;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--cyan);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: box-shadow 0.2s, background 0.2s, transform 0.1s;
+}
+
+.button:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.16);
+  box-shadow: var(--glow-cyan);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---- Загальний рядок по всіх авто ---- */
+
+/* загальні цифри — у шапці між заголовком і кнопкою, по центру вільного місця */
+.overall {
+  justify-self: center;
+  max-width: 100%;
+  padding: 8px 6px 10px;
+  border: 1px solid rgba(124, 140, 255, 0.18);
+  border-radius: var(--radius);
+  background: rgba(9, 12, 26, 0.45);
+  text-align: center;
+}
+
+.overall-head {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overall-time {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.overall-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.overall-stat {
+  min-width: 82px;
+  padding: 0 18px;
+  border-left: 1px solid rgba(124, 140, 255, 0.14);
+}
+
+.overall-stat:first-child {
+  border-left: none;
+}
+
+.overall-label {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overall-value {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.overall-sub {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.overall-stat.tone-income .overall-value {
+  color: var(--income);
+  text-shadow: 0 0 12px rgba(52, 245, 164, 0.35);
+}
+
+.overall-stat.tone-expense .overall-value {
+  color: var(--expense);
+  text-shadow: 0 0 12px rgba(255, 107, 154, 0.3);
+}
+
+/* ---- Вкладки авто ---- */
+
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 4px 4px 10px;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  backdrop-filter: blur(10px);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.tab:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+  transform: translateY(-2px);
+}
+
+/* активна вкладка — неонова рамка з градієнтом */
+.tab-active {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface-strong), var(--surface-strong)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--violet), var(--pink)) border-box;
+  box-shadow: 0 0 24px rgba(167, 139, 250, 0.3), 0 0 48px rgba(34, 211, 238, 0.12);
+}
+
+.tab-image {
+  width: 66px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.tab-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tab-title {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.tab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.is-sold {
+  color: var(--income);
+  text-shadow: 0 0 10px rgba(52, 245, 164, 0.45);
+}
+
+.in-work .icon {
+  color: var(--cyan);
+}
+
+.image-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 60%, rgba(167, 139, 250, 0.18), transparent 70%),
+    rgba(12, 14, 32, 0.8);
+}
+
+.car-outline {
+  width: 78%;
+  height: auto;
+  filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.8)) drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
+}
+
+/* ---- Вкладка одного авто ---- */
+
+.car {
+  animation: fade-in 0.35s ease-out;
+}
+
+.car-head {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 22px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+}
+
+.car-head h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.car-head p {
+  margin: 4px 0;
+}
+
+.car-photo {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.car-image {
+  display: block;
+  width: 300px;
+  height: 180px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.35), 0 0 30px rgba(167, 139, 250, 0.25),
+    0 0 60px rgba(34, 211, 238, 0.1);
+}
+
+.car-image.image-placeholder .car-outline {
+  width: 60%;
+}
+
+.car-photo figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.car-photo figcaption a {
+  color: var(--muted);
+}
+
+.car-photo figcaption a:hover {
+  color: var(--cyan);
+}
+
+.car-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+}
+
+/* ---- Картки ---- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+  transition: box-shadow 0.25s, transform 0.25s;
+}
+
+/* світна лінія зверху картки */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--tone, var(--violet)), transparent);
+  box-shadow: 0 0 14px var(--tone, var(--violet));
+  opacity: 0.85;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone, var(--violet)) 35%, transparent),
+    0 0 30px color-mix(in srgb, var(--tone, var(--violet)) 18%, transparent);
+}
+
+.card-income {
+  --tone: var(--income);
+}
+
+.card-expense {
+  --tone: var(--expense);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.card-hint {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+/* іконка картки — в кольорі картки; у порожньої картки — фіолетова */
+.card-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--tone, var(--violet));
+}
+
+.card-uah {
+  margin-top: 12px;
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--tone, var(--text));
+  text-shadow: 0 0 18px color-mix(in srgb, var(--tone, var(--violet)) 55%, transparent);
+}
+
+.card-usd {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-empty {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 15px;
+  font-style: italic;
+}
+
+/* ---- Таблиця ---- */
+
+.panel {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(124, 140, 255, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+tbody tr {
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+tbody tr:hover {
+  background: rgba(34, 211, 238, 0.06);
+  box-shadow: inset 3px 0 0 var(--cyan);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.entered {
+  color: #fff;
+  font-weight: 700;
+}
+
+.description {
+  min-width: 160px;
+  color: #c9d0e6;
+}
+
+.category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-icon {
+  color: var(--violet);
+}
+
+.cat-icon.cat-income {
+  color: var(--income);
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 11px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.badge-income {
+  color: var(--income);
+  background: rgba(52, 245, 164, 0.08);
+  box-shadow: 0 0 12px rgba(52, 245, 164, 0.25);
+}
+
+.badge-expense {
+  color: var(--expense);
+  background: rgba(255, 107, 154, 0.08);
+  box-shadow: 0 0 12px rgba(255, 107, 154, 0.22);
+}
+
+.empty {
+  padding: 28px 0;
+  text-align: center;
+}
+
+.note {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+/* ---- Помилка ---- */
+
+.error {
+  margin-bottom: 22px;
+  padding: 16px 20px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: var(--radius);
+  background: rgba(251, 191, 36, 0.07);
+  box-shadow: 0 0 26px rgba(251, 191, 36, 0.12);
+}
+
+.error strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warning);
+}
+
+.error p {
+  margin: 8px 0;
+}
+
+.error ul {
+  margin: 4px 0 14px;
+  padding-left: 20px;
+}
+
+/* ---- Анімації ---- */
+
+/* ---- Середня ширина: загальні цифри — окремим рядком під назвою ---- */
+
+@media (max-width: 1100px) {
+  .header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .overall {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate(4%, -3%) rotate(8deg) scale(1.08);
+  }
+  100% {
+    transform: translate(-4%, 3%) rotate(-6deg) scale(1.02);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- Телефон ---- */
+
+@media (max-width: 640px) {
+  .header {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    padding: 18px;
+  }
+
+  .overall {
+    grid-row: auto;
+    justify-self: stretch;
+  }
+
+  h1 {
+    font-size: 30px;
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  .logo svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* на телефоні — компактніше, рядки переносяться по центру */
+  .overall-stats {
+    row-gap: 8px;
+  }
+
+  .overall-stat,
+  .overall-stat:first-child {
+    min-width: 0;
+    padding: 0 10px;
+    border-left: none;
+  }
+
+  .car-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .car-image {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 10;
+  }
+
+  .card-uah {
+    font-size: 26px;
+  }
+}

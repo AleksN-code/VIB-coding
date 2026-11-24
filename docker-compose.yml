@@ -54,6 +54,23 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  # Web-адмінка (React + Vite): http://localhost:5173
+  frontend:
+    build: ./frontend
+    container_name: admin-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    # Жодних секретів: лише адреса API для проксі Vite (усередині мережі Docker)
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ./frontend:/app
+      # node_modules беремо з образу, а не з папки на ПК
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+
   # Пошук секретів (токенів, паролів) у файлах, які відстежує Git.
   # Не запускається разом із ботом — тільки вручну:
   #   docker compose run --rm secrets-scan
