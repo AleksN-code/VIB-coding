@@ -70,6 +70,21 @@ async def get_transaction(
     return await session.scalar(stmt)
 
 
+async def list_car_transactions(
+    session: AsyncSession, car_id: int, limit: int, offset: int = 0
+) -> list[tuple[Transaction, Category]]:
+    """Операції авто з категоріями — нові зверху (за датою операції), сторінками."""
+    stmt = (
+        select(Transaction, Category)
+        .join(Category, Category.id == Transaction.category_id)
+        .where(Transaction.car_id == car_id)
+        .order_by(Transaction.operation_date.desc(), Transaction.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return [(t, c) for t, c in await session.execute(stmt)]
+
+
 async def count_car_transactions(session: AsyncSession, car_id: int) -> int:
     """Скільки операцій записано на авто — для попередження перед його видаленням."""
     stmt = select(func.count(Transaction.id)).where(Transaction.car_id == car_id)

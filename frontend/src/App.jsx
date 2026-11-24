@@ -127,7 +127,7 @@ export default function App() {
           </span>
           <div>
             <h1>Car Finance</h1>
-            <p className="subtitle">Облік по кожному авто · Telegram-бот і web-адмінка</p>
+            <p className="subtitle">Фінансовий облік по авто</p>
           </div>
         </div>
         {summary && <OverallLine summary={summary} carsCount={cars.length} loadedAt={loadedAt} />}
@@ -221,13 +221,21 @@ function CarTabs({ cars, selectedId, onAdd }) {
           href={`#car-${car.id}`}
           className={`tab ${car.id === selectedId ? "tab-active" : ""}`}
           aria-current={car.id === selectedId ? "page" : undefined}
+          // Повна назва при наведенні — якщо довга назва у вкладці обрізана «…»
+          title={car.title}
         >
           <CarImage car={car} className="tab-image" />
           <span className="tab-text">
-            <span className="tab-title">{car.title}</span>
-            <span className={`tab-status ${car.sold ? "is-sold" : "in-work"}`}>
-              <Icon name={car.sold ? "sold" : "inWork"} />
-              {car.sold ? "Продано" : "В роботі"}
+            <span className="tab-title">
+              {car.brand} {car.model}
+            </span>
+            {/* Рік — окремим рядком під назвою, поруч зі статусом */}
+            <span className="tab-meta">
+              {car.year} ·
+              <span className={`tab-status ${car.sold ? "is-sold" : "in-work"}`}>
+                <Icon name={car.sold ? "sold" : "inWork"} />
+                {car.sold ? "Продано" : "В роботі"}
+              </span>
             </span>
           </span>
         </a>
@@ -258,7 +266,7 @@ function LogoMark() {
   const id = useId();
   const stroke = `url(#${id})`;
   return (
-    <svg viewBox="0 0 48 48" fill="none" width="34" height="34">
+    <svg viewBox="0 0 48 48" fill="none" width="40" height="40">
       <NeonGradient id={id} />
       <path d="M9.5 35 A17 17 0 1 1 38.5 35" stroke={stroke} strokeWidth="3" strokeLinecap="round" />
       <path d="M14 22.5 l2.4 1.1 M24 11 v2.6 M34 22.5 l-2.4 1.1" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" />

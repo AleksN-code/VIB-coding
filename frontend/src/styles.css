@@ -138,10 +138,10 @@ code {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 60px;
-  height: 60px;
+  width: 68px;
+  height: 68px;
   border: 1px solid transparent;
-  border-radius: 18px;
+  border-radius: 20px;
   background:
     linear-gradient(rgba(12, 14, 32, 0.92), rgba(12, 14, 32, 0.92)) padding-box,
     linear-gradient(135deg, #22d3ee, #a78bfa, #f472b6) border-box;
@@ -155,7 +155,7 @@ code {
 
 h1 {
   margin: 0;
-  font-size: 40px;
+  font-size: 52px;
   font-weight: 850;
   line-height: 1.05;
   letter-spacing: -0.03em;
@@ -286,20 +286,19 @@ h1 {
 
 /* ---- Вкладки авто ---- */
 
-/* вкладки, що не вміщаються, переносяться на наступний рядок — без прокрутки вбік */
+/* вкладки — сіткою з колонками однакової ширини (не вужче 260px):
+   повні рядки займають усю ширину, а вкладки останнього неповного рядка
+   лишаються такої ж ширини, як інші, і не розтягуються */
 .tabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 12px;
   margin-bottom: 24px;
   padding: 4px 4px 10px;
 }
 
-/* вкладки розтягуються, щоб кожен рядок займав усю ширину сторінки;
-   260px — найменша ширина вкладки, менше — переноситься на новий рядок */
 .tab {
   display: flex;
-  flex: 1 1 260px;
   min-width: 0;
   align-items: center;
   gap: 12px;
@@ -328,6 +327,7 @@ h1 {
 }
 
 .tab-image {
+  flex: 0 0 auto;
   width: 66px;
   height: 44px;
   border-radius: 10px;
@@ -338,10 +338,23 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
+/* у назві — марка й модель, рік — рядком нижче; якщо назва все одно задовга — «…» */
 .tab-title {
+  overflow: hidden;
   font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -874,7 +887,6 @@ tbody tr:hover {
 /* ---- Авто: кнопка «Додати авто» у вкладках, дії в картці ---- */
 
 .tab-add {
-  flex-basis: 200px;
   justify-content: center;
   gap: 8px;
   padding: 8px 18px;
@@ -1287,17 +1299,17 @@ textarea {
   }
 
   h1 {
-    font-size: 30px;
+    font-size: 38px;
   }
 
   .logo {
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
   }
 
   .logo svg {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
   }
 
   /* на телефоні — дві рівні колонки: Авто · Доходи, Витрати · Баланс */
@@ -1314,12 +1326,7 @@ textarea {
     border-left: none;
   }
 
-  /* на телефоні вкладка — на всю ширину, довга назва переноситься */
-  .tab {
-    flex: 1 1 100%;
-    min-width: 0;
-  }
-
+  /* на телефоні вкладка — на всю ширину (одна колонка), довга назва переноситься */
   .tab-title {
     white-space: normal;
   }
