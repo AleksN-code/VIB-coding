@@ -9,7 +9,9 @@
 **Що дає:**
 
 - навички кодингу на практиці;
-- створення власного продукту — від налаштування середовища до робочого Telegram-бота.
+- створення власного продукту — від налаштування середовища до Telegram-бота і web-адмінки.
+
+**Продукт:** облік фінансів під час пригону авто з-за кордону, ремонту та продажу. Telegram-бот записує витрати й продаж по кожному авто, web-адмінка показує їх у браузері: окремо по кожному авто — витрати, дохід і прибуток у гривнях і доларах.
 
 **Історія навчання:**
 
@@ -18,13 +20,16 @@
 - урок 4 — логування, помилки та перевірка секретів — [Debug / Troubleshooting](#debug--troubleshooting), [DEBUG.md](DEBUG.md), [detect-secrets](#перевірка-секретів-detect-secrets);
 - архітектура продукту — frontend, backend, database, API — [docs/architecture.md](docs/architecture.md);
 - база даних і запис витрат — Neon PostgreSQL, SQLAlchemy, схема — [docs/database.md](docs/database.md), [запис витрат](#запис-витрат-у-базу);
-- безпека секретів — [docs/security.md](docs/security.md).
+- безпека секретів — [docs/security.md](docs/security.md);
+- від бота до SaaS: web-адмінка (FastAPI + React), продаж авто, валюти й курс НБУ, міграції Alembic — [Web-адмінка](#web-адмінка).
 
 ## Урок 3: перший Telegram-бот
 
 ### Що робить бот
 
-Telegram-бот на [aiogram 3](https://docs.aiogram.dev/) для обліку витрат на пригін, ремонт і продаж авто. Користувач додає свої авто, записує витрати до кожного з них і бачить, скільки вже вкладено в кожне авто. Дані зберігаються в базі [Neon PostgreSQL](https://neon.tech).
+Telegram-бот на [aiogram 3](https://docs.aiogram.dev/) для обліку витрат на пригін, ремонт і продаж авто. Користувач додає свої авто, записує витрати й продаж кожного з них і бачить по кожному авто: скільки вкладено, за скільки продано і який прибуток. Дані зберігаються в базі [Neon PostgreSQL](https://neon.tech).
+
+Суму можна ввести в гривнях або доларах — друга валюта рахується за офіційним курсом НБУ на дату операції. Курс фіксується в момент запису й більше не змінюється.
 
 Секрети — `BOT_TOKEN` і `DATABASE_URL` — читаються зі змінних середовища. Локально їх завантажує з файлу `.env` бібліотека python-dotenv, а в Docker їх передає `docker-compose.yml`.
 
@@ -36,8 +41,9 @@ Telegram-бот на [aiogram 3](https://docs.aiogram.dev/) для обліку 
 |---|---|---|
 | — | `/start` | привітання, список команд і кнопки меню |
 | 🚗 Додати авто | `/addcar` | додати авто: марка, модель, рік, VIN (необов'язково). Можна одразу: `/addcar BMW X5 2018` |
-| 📋 Мої авто | `/cars` | список авто і скільки витрачено на кожне |
-| 💸 Додати витрату | `/expense` | обрати авто → категорію → написати суму й опис (`450 заміна фар`) |
+| 📋 Мої авто | `/cars` | картка кожного авто: статус, витрати, продаж, прибуток або збиток (грн і $) |
+| 💸 Додати витрату | `/expense` | авто → категорія → дата (Сьогодні / Вчора / Інша) → валюта (₴ / $) → сума й опис (`450 заміна фар`) |
+| 💰 Продаж авто | `/sell` | авто (лише непродані) → дата продажу → валюта → сума. Одне авто продається один раз |
 | — | `/cancel` | скасувати поточну дію |
 | ❓ Допомога | `/help` | що вміє бот і як ним користуватися |
 
@@ -45,19 +51,24 @@ Telegram-бот на [aiogram 3](https://docs.aiogram.dev/) для обліку 
 
 | Файл | Призначення |
 |---|---|
-| `app/main.py` | обробники команд і кнопок, меню, запуск бота |
-| `app/crud.py` | операції з базою: користувачі, авто, категорії, витрати |
-| `app/models.py` | таблиці бази як класи SQLAlchemy |
-| `app/db.py` | підключення до Neon, створення таблиць і категорій |
-| `requirements.txt` | Python-залежності: `aiogram`, `python-dotenv`, `watchfiles`, `SQLAlchemy`, `psycopg` |
+| `app/main.py` | бот: обробники команд і кнопок, меню, запуск |
+| `app/crud.py` | операції з базою: користувачі, авто, категорії, операції, калькуляція авто |
+| `app/models.py` | таблиці бази як класи SQLAlchemy (спільні для бота й API) |
+| `app/db.py` | підключення до Neon |
+| `app/nbu.py` | офіційний курс долара НБУ на дату і перерахунок грн ↔ $ |
+| `api/main.py` | backend API для адмінки (FastAPI): `/api/transactions`, `/api/summary`, `/api/cars` |
+| `api/car_images.py` | фото моделі авто з Вікіпедії |
+| `frontend/` | web-адмінка: React + Vite |
+| `alembic.ini`, `migrations/` | міграції бази (Alembic): кожна зміна структури — окремий файл |
+| `requirements.txt` | Python-залежності: `aiogram`, `SQLAlchemy`, `psycopg`, `alembic`, `fastapi`, `uvicorn` та ін. |
 | `.env` | справжні `BOT_TOKEN` і `DATABASE_URL`, тільки локально (не потрапляє в Git) |
 | `.env.example` | приклад змінних без справжніх значень |
 | `.gitignore` | файли, які не повинні потрапити в Git |
 | `Dockerfile` | правила створення Docker image |
-| `docker-compose.yml` | запуск бота в режимі розробки з automatic restart і сервіс перевірки секретів |
+| `docker-compose.yml` | сервіси `migrate`, `bot`, `api`, `frontend` у режимі розробки і `secrets-scan` |
 | `.dockerignore` | файли, які не передаються в Docker під час збирання образу (зокрема `.env`) |
 | `DEBUG.md` | опис помилок, які траплялися в проєкті, і як їх виправити |
-| `docs/architecture.md` | блоки продукту, як працюють `/start` і запис витрати |
+| `docs/architecture.md` | блоки продукту, як працюють `/start`, запис витрати й адмінка |
 | `docs/database.md` | таблиці, поля і зв'язки бази, схема з dbdiagram |
 | `docs/security.md` | секрети проєкту, `.env` і `.env.example`, що робити при витоку |
 
@@ -81,7 +92,7 @@ Telegram-бот на [aiogram 3](https://docs.aiogram.dev/) для обліку 
 
 Токен і рядок підключення — це паролі від бота й бази. `.env` вже додано в `.gitignore`: не комітьте його і не публікуйте ці значення. Детальніше — [docs/security.md](docs/security.md).
 
-Таблиці в базі й категорії витрат бот створює сам під час першого запуску.
+Таблиці в базі й категорії створюють міграції Alembic: у Docker вони запускаються автоматично перед ботом і API (сервіс `migrate`).
 
 > Не запускайте одночасно локальну та Docker-версію бота: два процеси з одним `BOT_TOKEN` конфліктують.
 
@@ -109,9 +120,10 @@ python -m pip install -r requirements.txt
 
 ### 3. Запустити локально
 
-З активованим віртуальним середовищем:
+З активованим віртуальним середовищем спершу оновіть базу, потім запустіть бота:
 
 ```powershell
+alembic upgrade head
 python -m app.main
 ```
 
@@ -125,18 +137,27 @@ Docker Desktop має бути запущений.
 docker compose up --build
 ```
 
-Відкрийте свого бота в Telegram і надішліть `/start`. Зупинка: `Ctrl + C`.
+Запускаються по черзі:
+
+| Сервіс | Що робить | Адреса |
+|---|---|---|
+| `migrate` | оновлює структуру бази (`alembic upgrade head`) і завершується | — |
+| `bot` | Telegram-бот; стартує лише після успішних міграцій | Telegram |
+| `api` | backend API (FastAPI) | http://localhost:8000/docs |
+| `frontend` | web-адмінка (React + Vite) | http://localhost:5173 |
+
+Відкрийте бота в Telegram і надішліть `/start`, адмінку — у браузері. Зупинка: `Ctrl + C`.
 
 Корисні команди:
 
 ```powershell
 docker compose up -d --build   # запуск у фоні
-docker compose ps              # стан контейнера
-docker compose logs -f         # логи
-docker compose down            # зупинити й видалити контейнер
+docker compose ps              # стан контейнерів
+docker compose logs -f bot     # логи бота (або api, frontend, migrate)
+docker compose down            # зупинити й видалити контейнери
 ```
 
-Перезбирати образ (`--build`) потрібно лише після змін у `requirements.txt` або `Dockerfile`. Зміни в коді в папці `app` підхоплюються автоматично (див. нижче).
+Перезбирати образ (`--build`) потрібно лише після змін у `requirements.txt`, `package.json` або `Dockerfile`. Зміни в коді в папках `app`, `api` і `frontend/src` підхоплюються автоматично.
 
 ### 5. Перевірити automatic restart
 
@@ -197,11 +218,14 @@ Telegram → Telegram Bot API → aiogram backend → SQLAlchemy → Neon Postgr
 ### Як записати витрату
 
 1. **🚗 Додати авто** → напишіть `BMW X5 2018` (або з VIN: `BMW X5 2018 WBAXXXXXXXXXXXXXX`).
-2. **💸 Додати витрату** → натисніть авто → натисніть категорію → напишіть `450 заміна фар`.
-3. Бот відповість «✅ Витрату записано» і покаже, скільки всього витрачено на це авто.
-4. **📋 Мої авто** — усі авто із сумою витрат.
+2. **💸 Додати витрату** → авто → категорія → дата → валюта → напишіть `450 заміна фар`.
+3. Бот відповість «✅ Витрату записано»: сума в грн і $, курс НБУ і підсумок по авто.
+4. **💰 Продаж авто** → авто → дата продажу → валюта → сума. Авто отримує статус «продано», бот показує прибуток.
+5. **📋 Мої авто** — картки всіх авто з витратами, продажем і прибутком.
 
-Сума — число без пробілів, за потреби з копійками через крапку чи кому (`1250,50`), опис — після пробілу.
+Сума — число без пробілів, за потреби з копійками через крапку чи кому (`1250,50`), опис — після пробілу. Дата операції не може бути в майбутньому: на неї ще немає курсу НБУ.
+
+У повідомленнях бота й в адмінці суми показуються до цілого числа, курс — з 2 знаками. У базі суми зберігаються з копійками, курс — з 4 знаками, як у НБУ.
 
 ### Як перевірити, що дані в базі
 
@@ -209,12 +233,14 @@ Telegram → Telegram Bot API → aiogram backend → SQLAlchemy → Neon Postgr
 - Або **SQL Editor** у Neon Console:
 
   ```sql
-  select c.brand, c.model, c.year, cat.name, t.amount, t.description, t.created_at
+  select t.operation_date, c.brand, c.model, cat.type, cat.name,
+         t.amount, t.currency, t.usd_rate, t.amount_uah, t.amount_usd, t.description
   from transactions t
   join cars c on c.id = t.car_id
   join categories cat on cat.id = t.category_id
   order by t.created_at desc;
   ```
+- Або просто відкрийте web-адмінку: http://localhost:5173.
 
 ### Що перевірялося
 
@@ -225,6 +251,66 @@ Telegram → Telegram Bot API → aiogram backend → SQLAlchemy → Neon Postgr
 - База сама не дає записати суму ≤ 0 (`CHECK (amount > 0)`).
 - Тести роботи з базою виконувалися в транзакції, яку потім скасовано — тестових даних у базі не лишилося.
 - `DATABASE_URL` не потрапляє в Git, Docker image і логи; detect-secrets — чисто.
+
+## Web-адмінка
+
+Перший крок від Telegram-бота до SaaS-продукту: read-only адмінка, яка показує фінансові операції з Neon у браузері. Створення, редагування й видалення операцій, авторизація і LLM-аналіз — наступні уроки.
+
+### Архітектура
+
+У продукті два інтерфейси з однією базою:
+
+```
+Telegram → Bot (aiogram) → Neon PostgreSQL           — записує операції
+Browser → React → FastAPI → Neon PostgreSQL          — показує операції
+```
+
+**Важливе правило:** React не підключається до Neon напряму. Frontend звертається тільки до backend API, а `DATABASE_URL` знає лише backend. Детальніше — [docs/architecture.md](docs/architecture.md#web-адмінка), [docs/security.md](docs/security.md).
+
+### Backend API
+
+| Endpoint | Що повертає |
+|---|---|
+| `GET /api/transactions` | список операцій у JSON: дата, тип (`income` / `expense`), авто, категорія, сума й валюта введення, курс НБУ, суми в грн і $, опис. Параметри: `limit` (1–500, за замовчуванням 100), `car_id` — операції одного авто |
+| `GET /api/summary` | `total_income`, `total_expense`, `balance` — кожне в `uah` і `usd`, і кількість операцій |
+| `GET /api/cars` | авто з окремою калькуляцією: витрати, дохід, прибуток (після продажу), статус, фото моделі |
+| `GET /api/health` | `{"status": "ok"}` — API працює і база доступна |
+
+Перевірити в браузері: http://localhost:8000/docs → endpoint → **Try it out** → **Execute**. API повертає JSON, помилки — теж JSON (`422` — неправильний параметр, `503` — база недоступна).
+
+### React-адмінка
+
+http://localhost:5173 — React + Vite у Docker. Команди з уроку `npm install` і `npm run dev` виконує контейнер `frontend` (`Dockerfile` і `docker-compose.yml`), Node.js на ПК не потрібен.
+
+Що на сторінці:
+
+- **шапка** — назва й загальні доходи, витрати й баланс по всіх авто (`/api/summary`);
+- **вкладка на кожне авто** — фото моделі з Вікіпедії, статус, картки «Витрати», «Дохід», «Прибуток» у грн і $ (`/api/cars`);
+- **таблиця операцій авто** — дата, тип, сума в грн, сума в $, категорія, опис (`/api/transactions?car_id=…`);
+- **стан завантаження** і **зрозуміла помилка**, якщо API недоступний.
+
+Дані надходять лише з backend API — тимчасових масивів у React немає. Запити з браузера йдуть на `localhost:5173/api/...`, а dev-сервер Vite пересилає їх на FastAPI (`frontend/vite.config.js`).
+
+Фото — загальне фото моделі з Вікіпедії, не конкретного авто (покоління може не збігатися). Якщо фото не знайдено — показується контур авто.
+
+### Якщо frontend не бачить API
+
+1. Чи запущений backend: `docker compose ps` — сервіс `api` має бути `running`.
+2. Чи відкриваються http://localhost:8000/api/transactions і http://localhost:8000/api/summary.
+3. Адреса запиту в React: `frontend/src/api.js` (шлях `/api/...`) і проксі в `frontend/vite.config.js` (`API_URL`, у Docker — `http://api:8000`).
+4. Логи backend: `docker compose logs api`.
+5. Помилки в Console браузера: F12 → **Console** і **Network**.
+
+### Перевірка повного сценарію
+
+1. У Telegram: **💸 Додати витрату** → авто → «Інше» → дата → ₴ → `120 кава`.
+2. Бот підтверджує: «✅ Витрату записано».
+3. Запис є в Neon і у відповіді `GET /api/transactions?car_id=<id авто>`.
+4. Оновіть адмінку (кнопка «Оновити» або F5).
+5. Нова операція — у таблиці вкладки цього авто.
+6. Витрати авто й загальний баланс у шапці оновилися.
+
+Повний маршрут: **Telegram → Neon → FastAPI API → React Admin**. Перевірено: запис із бота (Audi q7, «Інше», 3 800 грн, «шиномонтаж») з'явився в Neon, в API і на вкладці авто в адмінці, підсумки оновилися.
 
 ## Debug / Troubleshooting
 
@@ -248,6 +334,10 @@ docker compose logs -f bot
 | у логах `Update ... is not handled` | повідомлення не підійшло жодному обробнику — див. [DEBUG.md](DEBUG.md), розділ 5 |
 | бот не відповідає, а в логах `Conflict: terminated by other getUpdates request` | бот запущено двічі (локально і в Docker) — зупинити одну копію |
 | зміни в `.env` не діють | `restart` не перечитує `.env` — потрібен `docker compose up -d --force-recreate` |
+| бот і API не стартують, `migrate` — `Exited (1)` | міграція не пройшла — `docker compose logs migrate`, див. [DEBUG.md](DEBUG.md), розділ 6 |
+| `DuplicateTable: relation "users" already exists` у `migrate` | база створена до Alembic — один раз `docker compose run --rm migrate alembic stamp 0001`, потім `docker compose up -d` |
+| «Не вдалося отримати офіційний курс долара НБУ» | сайт НБУ тимчасово недоступний — надіслати суму ще раз за хвилину |
+| адмінка: «Backend API не відповідає (HTTP 500)» | API зупинений — `docker compose ps`, `docker compose up -d api`, див. [DEBUG.md](DEBUG.md), розділ 7 |
 
 Детальний опис помилок, які траплялися в проєкті, з повідомленнями та поясненнями — у [DEBUG.md](DEBUG.md).
 

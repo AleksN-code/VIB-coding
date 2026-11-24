@@ -1,9 +1,26 @@
 services:
+  # Міграції бази (Alembic): запускаються перед ботом і завершуються.
+  # Вручну: docker compose run --rm migrate
+  migrate:
+    build: .
+    env_file: .env
+    restart: "no"
+    # Локальні файли — щоб нові міграції працювали без перезбирання образу
+    volumes:
+      - ./app:/bot/app
+      - ./migrations:/bot/migrations
+      - ./alembic.ini:/bot/alembic.ini
+    command: ["alembic", "upgrade", "head"]
+
   bot:
     build: .
     container_name: first-bot
     env_file: .env
     restart: unless-stopped
+    # Бот стартує, лише коли міграції успішно застосовані
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
     # Режим розробки: локальна папка app підключена в контейнер,
     # і watchfiles перезапускає бота після зміни будь-якого .py файлу в ній.
@@ -13,6 +30,46 @@ services:
     environment:
       # На Windows/WSL 2 події зміни файлів не доходять у контейнер — перевіряємо зміни опитуванням.
       WATCHFILES_FORCE_POLLING: "true"
+
+  # Backend API для web-адмінки (FastAPI): http://localhost:8000/docs
+  api:
+    build: .
+    container_name: admin-api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # API потрібен лише DATABASE_URL (без BOT_TOKEN) — Docker Compose бере значення з .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      WATCHFILES_FORCE_POLLING: "true"
+    # Режим розробки: зміни в app/ та api/ підхоплюються без перезбирання образу
+    volumes:
+      - ./app:/bot/app
+      - ./api:/bot/api
+    command:
+      ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000",
+       "--reload", "--reload-dir", "api", "--reload-dir", "app"]
+    # Лише на цьому ПК: 127.0.0.1 — з інших пристроїв у мережі API недоступний
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # Web-адмінка (React + Vite): http://localhost:5173
+  frontend:
+    build: ./frontend
+    container_name: admin-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    # Жодних секретів: лише адреса API для проксі Vite (усередині мережі Docker)
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ./frontend:/app
+      # node_modules беремо з образу, а не з папки на ПК
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
 
   # Пошук секретів (токенів, паролів) у файлах, які відстежує Git.
   # Не запускається разом із ботом — тільки вручну:

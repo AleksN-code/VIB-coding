@@ -7,6 +7,10 @@ __pycache__/
 .venv/
 venv/
 
+# Node / React (frontend)
+node_modules/
+dist/
+
 # Редактори
 .vscode/
 .idea/
