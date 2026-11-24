@@ -1,5 +1,6 @@
 """Операції з базою: користувачі, авто, категорії, витрати й доходи."""
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
@@ -7,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import EXPENSE, Car, Category, Transaction, User
+from app.models import EXPENSE, INCOME, Car, Category, Transaction, User
 from app.nbu import to_uah_usd
 
 
@@ -46,9 +47,17 @@ async def list_cars(session: AsyncSession, user_id: int) -> list[Car]:
     return list(await session.scalars(stmt))
 
 
-async def get_user_car(session: AsyncSession, user_id: int, car_id: int) -> Car | None:
-    """Авто, тільки якщо воно належить цьому користувачу."""
+async def get_user_car(
+    session: AsyncSession, user_id: int, car_id: int, lock: bool = False
+) -> Car | None:
+    """Авто, тільки якщо воно належить цьому користувачу.
+
+    lock=True блокує рядок авто до кінця транзакції — щоб два одночасні продажі
+    одного авто не записалися обидва.
+    """
     stmt = select(Car).where(Car.id == car_id, Car.user_id == user_id)
+    if lock:
+        stmt = stmt.with_for_update()
     return await session.scalar(stmt)
 
 
@@ -60,6 +69,10 @@ async def list_categories(session: AsyncSession, type_: str) -> list[Category]:
 
 async def get_category(session: AsyncSession, category_id: int) -> Category | None:
     return await session.get(Category, category_id)
+
+
+async def get_category_by_name(session: AsyncSession, name: str) -> Category | None:
+    return await session.scalar(select(Category).where(Category.name == name))
 
 
 async def add_transaction(
@@ -92,11 +105,49 @@ async def add_transaction(
     return transaction
 
 
-async def car_expenses_uah(session: AsyncSession, car_id: int) -> Decimal:
-    """Скільки всього витрачено на авто, у гривнях."""
+@dataclass
+class CarSummary:
+    """Калькуляція одного авто: витрати, дохід від продажу і прибуток."""
+
+    expenses_uah: Decimal = Decimal(0)
+    expenses_usd: Decimal = Decimal(0)
+    income_uah: Decimal = Decimal(0)
+    income_usd: Decimal = Decimal(0)
+    sale_date: date | None = None
+
+    @property
+    def sold(self) -> bool:
+        return self.sale_date is not None
+
+    @property
+    def profit_uah(self) -> Decimal:
+        return self.income_uah - self.expenses_uah
+
+    @property
+    def profit_usd(self) -> Decimal:
+        # Кожна операція перерахована за курсом на свою дату, тому прибуток у $ —
+        # різниця сум у $, а не прибуток у грн, поділений на сьогоднішній курс
+        return self.income_usd - self.expenses_usd
+
+
+async def car_summary(session: AsyncSession, car_id: int) -> CarSummary:
+    """Витрати й доходи одного авто. Інші авто не враховуються."""
     stmt = (
-        select(func.coalesce(func.sum(Transaction.amount_uah), 0))
+        select(
+            Category.type,
+            func.coalesce(func.sum(Transaction.amount_uah), 0),
+            func.coalesce(func.sum(Transaction.amount_usd), 0),
+            func.max(Transaction.operation_date),
+        )
         .join(Category, Category.id == Transaction.category_id)
-        .where(Transaction.car_id == car_id, Category.type == EXPENSE)
+        .where(Transaction.car_id == car_id)
+        .group_by(Category.type)
     )
-    return Decimal(await session.scalar(stmt))
+    summary = CarSummary()
+    for type_, total_uah, total_usd, last_date in await session.execute(stmt):
+        if type_ == EXPENSE:
+            summary.expenses_uah, summary.expenses_usd = Decimal(total_uah), Decimal(total_usd)
+        elif type_ == INCOME:
+            summary.income_uah, summary.income_usd = Decimal(total_uah), Decimal(total_usd)
+            summary.sale_date = last_date
+    return summary
