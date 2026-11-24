@@ -543,7 +543,7 @@ h1 {
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
@@ -683,6 +683,471 @@ tbody tr:hover {
   padding-left: 20px;
 }
 
+/* ---- Кнопки дій ---- */
+
+/* головна дія (Додати, Зберегти) — заповнена, з неоновою рамкою-градієнтом */
+.button-primary {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.16), rgba(167, 139, 250, 0.16)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--violet)) border-box;
+  color: #e8fbff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.26), rgba(167, 139, 250, 0.26)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--violet)) border-box;
+  box-shadow: var(--glow-violet);
+}
+
+/* другорядна дія (Скасувати) */
+.button-ghost {
+  border-color: rgba(140, 150, 180, 0.4);
+  background: transparent;
+  color: var(--text);
+}
+
+.button-ghost:hover:not(:disabled) {
+  background: rgba(140, 150, 180, 0.12);
+  box-shadow: none;
+}
+
+/* небезпечна дія (Видалити) */
+.button-danger {
+  border-color: rgba(255, 107, 154, 0.6);
+  background: rgba(255, 107, 154, 0.12);
+  color: var(--expense);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: rgba(255, 107, 154, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 107, 154, 0.45), 0 0 22px rgba(255, 107, 154, 0.25);
+}
+
+/* кругла кнопка-іконка (змінити, видалити, закрити) */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.icon-button:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+}
+
+.icon-button-danger:hover {
+  border-color: rgba(255, 107, 154, 0.45);
+  background: rgba(255, 107, 154, 0.12);
+  color: var(--expense);
+}
+
+:is(.button, .icon-button, .filter):focus-visible,
+:is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ---- Фільтри й кнопка над таблицею ---- */
+
+.panel-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-note {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.filters {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(9, 12, 26, 0.5);
+}
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.filter:hover {
+  color: var(--text);
+}
+
+.filter-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(124, 140, 255, 0.14);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* активний фільтр — у кольорі свого типу */
+.filter.is-active {
+  --tone: var(--cyan);
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--tone);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tone) 25%, transparent);
+}
+
+.filter-income.is-active {
+  --tone: var(--income);
+}
+
+.filter-expense.is-active {
+  --tone: var(--expense);
+}
+
+/* повідомлення після дії: «Операцію додано» */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(52, 245, 164, 0.45);
+  border-radius: 12px;
+  background: rgba(52, 245, 164, 0.08);
+  color: var(--income);
+  box-shadow: 0 0 18px rgba(52, 245, 164, 0.15);
+  animation: fade-in 0.25s ease-out;
+}
+
+/* колонка з кнопками змінити / видалити */
+.actions-col {
+  width: 1%;
+}
+
+.actions {
+  white-space: nowrap;
+  text-align: right;
+  vertical-align: middle;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Вікно поверх сторінки (форма, підтвердження) ---- */
+
+.modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 22px 24px 24px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    linear-gradient(rgba(14, 18, 36, 0.97), rgba(14, 18, 36, 0.97)) padding-box,
+    linear-gradient(120deg, rgba(34, 211, 238, 0.7), rgba(167, 139, 250, 0.7), rgba(244, 114, 182, 0.7)) border-box;
+  color: var(--text);
+  box-shadow: 0 0 40px rgba(167, 139, 250, 0.3), 0 0 90px rgba(34, 211, 238, 0.12);
+}
+
+.modal[open] {
+  animation: fade-in 0.2s ease-out;
+}
+
+.modal-danger {
+  background:
+    linear-gradient(rgba(20, 14, 30, 0.97), rgba(20, 14, 30, 0.97)) padding-box,
+    linear-gradient(120deg, rgba(255, 107, 154, 0.8), rgba(167, 139, 250, 0.6)) border-box;
+  box-shadow: 0 0 40px rgba(255, 107, 154, 0.25);
+}
+
+.modal::backdrop {
+  background: rgba(4, 6, 16, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-head h3 {
+  font-size: 20px;
+}
+
+/* ---- Форма ---- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-car {
+  margin: 0;
+  color: var(--muted);
+}
+
+.form-car strong {
+  color: var(--text);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.field > label,
+.field > legend {
+  padding: 0;
+  margin-bottom: 6px;
+  color: #c9d0e6;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.field > label {
+  margin-bottom: 0;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(9, 12, 26, 0.7);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+textarea {
+  resize: vertical;
+}
+
+:is(input, select, textarea):hover {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+:is(input, select, textarea):focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+/* поле з помилкою */
+:is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--expense);
+  box-shadow: 0 0 0 3px rgba(255, 107, 154, 0.15);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--expense);
+  font-size: 13px;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* сума зі знаком валюти справа */
+.input-suffix {
+  position: relative;
+}
+
+.input-suffix input {
+  padding-right: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-suffix span {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* перемикач з двох варіантів: тип, валюта */
+.segmented {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(9, 12, 26, 0.7);
+}
+
+.segment {
+  --tone: var(--cyan);
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segment.is-checked {
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--tone);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+.segment-income {
+  --tone: var(--income);
+}
+
+.segment-expense {
+  --tone: var(--expense);
+}
+
+.segment.is-disabled:not(.is-checked) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.segment:has(input:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* помилка від backend у формі */
+.form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 107, 154, 0.55);
+  border-radius: 12px;
+  background: rgba(255, 107, 154, 0.1);
+  color: #ffc2d4;
+}
+
+.form-error .icon {
+  margin-top: 2px;
+  color: var(--expense);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- Підтвердження видалення ---- */
+
+.confirm-details {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(9, 12, 26, 0.6);
+}
+
+.confirm-details div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+}
+
+.confirm-details dt {
+  color: var(--muted);
+}
+
+.confirm-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.09);
+  color: #fde7a8;
+}
+
+.warning-box .icon {
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.warning-box p {
+  margin: 0;
+}
+
 /* ---- Анімації ---- */
 
 /* ---- Середня ширина: загальні цифри — окремим рядком під назвою ---- */
@@ -795,5 +1260,43 @@ tbody tr:hover {
 
   .card-uah {
     font-size: 26px;
+  }
+
+  /* над таблицею: фільтри й кнопка — на всю ширину */
+  .panel-tools,
+  .panel-tools .button {
+    width: 100%;
+  }
+
+  .panel-tools .button {
+    justify-content: center;
+  }
+
+  .filters {
+    display: flex;
+    width: 100%;
+  }
+
+  .filter {
+    flex: 1;
+    justify-content: center;
+    padding: 6px 8px;
+  }
+
+  .modal {
+    padding: 18px 16px 20px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-details div {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .form-actions .button {
+    flex: 1;
+    justify-content: center;
   }
 }

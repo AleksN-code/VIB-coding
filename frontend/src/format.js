@@ -25,3 +25,9 @@ export function formatDate(isoDate) {
   const [year, month, day] = isoDate.split("-");
   return `${day}.${month}.${year}`;
 }
+
+// Сьогоднішня дата за київським часом у форматі "2026-11-24" — як у боті.
+// Формат en-CA дає саме РРРР-ММ-ДД.
+export function todayInKyiv() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
+}

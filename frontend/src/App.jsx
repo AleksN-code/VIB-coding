@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { fetchCars, fetchSummary, fetchTransactions } from "./api.js";
+import { fetchCars, fetchCategories, fetchSummary, fetchTransactions } from "./api.js";
+import DeleteTransactionDialog from "./DeleteTransactionDialog.jsx";
 import { formatDate, formatRate, formatUah, formatUsd } from "./format.js";
 import { CATEGORY_ICON, Icon } from "./icons.jsx";
+import TransactionForm from "./TransactionForm.jsx";
+
+// Фільтри таблиці операцій: лише змінюють, що видно; дані в базі не змінюються
+const FILTERS = [
+  { value: "all", label: "Усі" },
+  { value: "income", label: "Доходи" },
+  { value: "expense", label: "Витрати" },
+];
 
 // Обрана вкладка зберігається в адресі (#car-4), щоб після оновлення сторінки лишатися на ній
 function carIdFromHash() {
@@ -14,6 +23,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
   const [cars, setCars] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [selectedId, setSelectedId] = useState(carIdFromHash);
   const [loadedAt, setLoadedAt] = useState(null);
   // Лічильник оновлень: після «Оновити» вкладка авто заново завантажує свої операції
@@ -23,9 +33,14 @@ export default function App() {
     setStatus("loading");
     setError(null);
     try {
-      const [summaryData, carsData] = await Promise.all([fetchSummary(), fetchCars()]);
+      const [summaryData, carsData, categoriesData] = await Promise.all([
+        fetchSummary(),
+        fetchCars(),
+        fetchCategories(),
+      ]);
       setSummary(summaryData);
       setCars(carsData);
+      setCategories(categoriesData);
       setLoadedAt(new Date());
       setReloadKey((key) => key + 1);
       setStatus("ready");
@@ -57,7 +72,7 @@ export default function App() {
           </span>
           <div>
             <h1>Car Finance</h1>
-            <p className="subtitle">Облік по кожному авто · дані з Telegram-бота</p>
+            <p className="subtitle">Облік по кожному авто · Telegram-бот і web-адмінка</p>
           </div>
         </div>
         {summary && <OverallLine summary={summary} carsCount={cars.length} loadedAt={loadedAt} />}
@@ -77,7 +92,17 @@ export default function App() {
           ) : (
             <>
               <CarTabs cars={cars} selectedId={selectedCar?.id} />
-              {selectedCar && <CarView key={selectedCar.id} car={selectedCar} reloadKey={reloadKey} />}
+              {selectedCar && (
+                <CarView
+                  key={selectedCar.id}
+                  car={selectedCar}
+                  cars={cars}
+                  categories={categories}
+                  reloadKey={reloadKey}
+                  // Після зміни даних — заново завантажити загальні цифри, картки авто й таблицю
+                  onChanged={load}
+                />
+              )}
             </>
           )}
         </>
@@ -199,10 +224,16 @@ function CarImage({ car, className }) {
   return <img className={className} src={car.image_url} alt={car.title} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-function CarView({ car, reloadKey }) {
+function CarView({ car, cars, categories, reloadKey, onChanged }) {
   const [status, setStatus] = useState("loading");
-  const [transactions, setTransactions] = useState([]);
+  // null — ще не завантажено; після першого завантаження таблиця лишається видимою під час оновлень
+  const [transactions, setTransactions] = useState(null);
   const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("all");
+  // Відкрите вікно: форма (нова операція або зміна) чи підтвердження видалення
+  const [editing, setEditing] = useState(null); // null | { transaction: null | {...} }
+  const [deleting, setDeleting] = useState(null); // null | операція
+  const [notice, setNotice] = useState(null);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -219,6 +250,35 @@ function CarView({ car, reloadKey }) {
   useEffect(() => {
     load();
   }, [load, reloadKey]);
+
+  // Повідомлення «Операцію додано» зникає саме
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  function handleSaved(saved) {
+    const isNew = editing.transaction == null;
+    setEditing(null);
+    let text = isNew ? "Операцію додано." : "Зміни збережено.";
+    if (saved.car_id !== car.id) text += ` Операцію перенесено на ${saved.car}.`;
+    setNotice(text);
+    onChanged();
+  }
+
+  function handleDeleted(deleted) {
+    setDeleting(null);
+    setNotice(deleted.type === "income" ? "Продаж видалено — авто знову в роботі." : "Операцію видалено.");
+    onChanged();
+  }
+
+  const counts = {
+    all: transactions?.length ?? 0,
+    income: transactions?.filter((t) => t.type === "income").length ?? 0,
+    expense: transactions?.filter((t) => t.type === "expense").length ?? 0,
+  };
+  const visible = transactions?.filter((t) => filter === "all" || t.type === filter) ?? [];
 
   return (
     <section className="car">
@@ -266,12 +326,63 @@ function CarView({ car, reloadKey }) {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>Операції</h3>
-          {status === "loading" && <span className="muted">Завантаження…</span>}
+          <h3>
+            Операції
+            {status === "loading" && <span className="muted loading-note"> · завантаження…</span>}
+          </h3>
+          <div className="panel-tools">
+            <div className="filters" role="group" aria-label="Показати операції">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  className={`filter filter-${f.value} ${filter === f.value ? "is-active" : ""}`}
+                  aria-pressed={filter === f.value}
+                  onClick={() => setFilter(f.value)}
+                >
+                  {f.label}
+                  <span className="filter-count">{counts[f.value]}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="button button-primary" onClick={() => setEditing({ transaction: null })}>
+              <Icon name="plus" />
+              Додати операцію
+            </button>
+          </div>
         </div>
+
+        {notice && (
+          <div className="notice" role="status">
+            <Icon name="check" />
+            {notice}
+          </div>
+        )}
         {status === "error" && <ErrorBox message={error} onRetry={load} />}
-        {status === "ready" && <TransactionsTable transactions={transactions} />}
+        {transactions && status !== "error" && (
+          <TransactionsTable
+            transactions={visible}
+            totalCount={transactions.length}
+            filter={filter}
+            onEdit={(t) => setEditing({ transaction: t })}
+            onDelete={setDeleting}
+          />
+        )}
       </div>
+
+      {editing && (
+        <TransactionForm
+          car={car}
+          cars={cars}
+          categories={categories}
+          transaction={editing.transaction}
+          onClose={() => setEditing(null)}
+          onSaved={handleSaved}
+        />
+      )}
+      {deleting && (
+        <DeleteTransactionDialog transaction={deleting} onClose={() => setDeleting(null)} onDeleted={handleDeleted} />
+      )}
     </section>
   );
 }
@@ -296,9 +407,21 @@ function SummaryCard({ title, icon, tone, money, placeholder, hint }) {
   );
 }
 
-function TransactionsTable({ transactions }) {
+const EMPTY_FILTER_TEXT = {
+  income: "Доходів по цьому авто немає — авто ще не продано.",
+  expense: "Витрат по цьому авто ще немає.",
+};
+
+function TransactionsTable({ transactions, totalCount, filter, onEdit, onDelete }) {
+  if (totalCount === 0) {
+    return (
+      <p className="muted empty">
+        Операцій по цьому авто ще немає. Додайте першу кнопкою «Додати операцію» або в Telegram-боті.
+      </p>
+    );
+  }
   if (transactions.length === 0) {
-    return <p className="muted empty">Операцій по цьому авто ще немає. Додайте витрату в Telegram-боті.</p>;
+    return <p className="muted empty">{EMPTY_FILTER_TEXT[filter]}</p>;
   }
 
   return (
@@ -312,6 +435,9 @@ function TransactionsTable({ transactions }) {
             <th className="num">Сума, $</th>
             <th>Категорія</th>
             <th>Опис</th>
+            <th className="actions-col">
+              <span className="visually-hidden">Дії</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -321,7 +447,7 @@ function TransactionsTable({ transactions }) {
               <td>
                 <span className={`badge badge-${t.type}`}>{t.type === "income" ? "Дохід" : "Витрата"}</span>
               </td>
-              {/* Валюту, в якій суму ввели в боті, виділено жирним */}
+              {/* Валюту, в якій ввели суму (у боті чи тут), виділено жирним */}
               <td className={`num nowrap ${t.currency === "UAH" ? "entered" : ""}`}>{formatUah(t.amount_uah)}</td>
               <td
                 className={`num nowrap ${t.currency === "USD" ? "entered" : ""}`}
@@ -334,12 +460,32 @@ function TransactionsTable({ transactions }) {
                 {t.category}
               </td>
               <td className="description">{t.description ?? <span className="muted">—</span>}</td>
+              <td className="actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => onEdit(t)}
+                  aria-label={`Змінити операцію від ${formatDate(t.date)}: ${t.category}`}
+                  title="Змінити"
+                >
+                  <Icon name="edit" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button icon-button-danger"
+                  onClick={() => onDelete(t)}
+                  aria-label={`Видалити операцію від ${formatDate(t.date)}: ${t.category}`}
+                  title="Видалити"
+                >
+                  <Icon name="trash" />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="muted note">
-        Жирним — валюта, в якій суму ввели в боті. Наведіть на суму в $, щоб побачити курс НБУ.
+        Жирним — валюта, в якій ввели суму. Наведіть на суму в $, щоб побачити курс НБУ.
       </p>
     </div>
   );
