@@ -1,4 +1,8 @@
-"""Операції з базою: користувачі, авто, категорії, витрати й доходи."""
+"""Запити до бази: користувачі, авто, категорії, витрати й доходи.
+
+Тут лише читання й запис через SQLAlchemy, без правил. Перевірки даних і бізнес-правила
+(продаж лише один, тип операції не змінюється) — в app/services.py.
+"""
 
 from dataclasses import dataclass
 from datetime import date
@@ -33,32 +37,61 @@ async def get_or_create_user(
     return (await session.scalars(stmt)).one()
 
 
-async def add_car(
-    session: AsyncSession, user_id: int, brand: str, model: str, year: int, vin: str | None
-) -> Car:
-    car = Car(user_id=user_id, brand=brand, model=model, year=year, vin=vin)
-    session.add(car)
-    await session.flush()  # отримати car.id до commit
-    return car
-
-
 async def list_cars(session: AsyncSession, user_id: int) -> list[Car]:
     stmt = select(Car).where(Car.user_id == user_id).order_by(Car.id)
     return list(await session.scalars(stmt))
 
 
-async def get_user_car(
-    session: AsyncSession, user_id: int, car_id: int, lock: bool = False
+async def get_car(
+    session: AsyncSession, car_id: int, owner_id: int | None = None, lock: bool = False
 ) -> Car | None:
-    """Авто, тільки якщо воно належить цьому користувачу.
+    """Авто за id.
 
+    owner_id — лише якщо авто належить цьому користувачу (бот: кожен бачить свої авто).
+    None — будь-яке авто (web-адмінка).
     lock=True блокує рядок авто до кінця транзакції — щоб два одночасні продажі
     одного авто не записалися обидва.
     """
-    stmt = select(Car).where(Car.id == car_id, Car.user_id == user_id)
+    stmt = select(Car).where(Car.id == car_id)
+    if owner_id is not None:
+        stmt = stmt.where(Car.user_id == owner_id)
     if lock:
         stmt = stmt.with_for_update()
     return await session.scalar(stmt)
+
+
+async def get_transaction(
+    session: AsyncSession, transaction_id: int, owner_id: int | None = None
+) -> Transaction | None:
+    """Операція за id. owner_id — як у get_car: лише операція цього користувача."""
+    stmt = select(Transaction).where(Transaction.id == transaction_id)
+    if owner_id is not None:
+        stmt = stmt.where(Transaction.user_id == owner_id)
+    return await session.scalar(stmt)
+
+
+async def count_car_transactions(session: AsyncSession, car_id: int) -> int:
+    """Скільки операцій записано на авто — для попередження перед його видаленням."""
+    stmt = select(func.count(Transaction.id)).where(Transaction.car_id == car_id)
+    return await session.scalar(stmt)
+
+
+async def car_is_sold(
+    session: AsyncSession, car_id: int, exclude_transaction_id: int | None = None
+) -> bool:
+    """Чи є в авто операція доходу (продаж).
+
+    exclude_transaction_id — не враховувати цю операцію: коли редагують сам продаж,
+    він не має заважати сам собі.
+    """
+    stmt = (
+        select(Transaction.id)
+        .join(Category, Category.id == Transaction.category_id)
+        .where(Transaction.car_id == car_id, Category.type == INCOME)
+    )
+    if exclude_transaction_id is not None:
+        stmt = stmt.where(Transaction.id != exclude_transaction_id)
+    return await session.scalar(stmt.limit(1)) is not None
 
 
 async def list_categories(session: AsyncSession, type_: str) -> list[Category]:

@@ -4,9 +4,8 @@ import asyncio
 import logging
 import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -15,11 +14,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BotCommand, CallbackQuery, Message, User as TgUser
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from dotenv import load_dotenv
-from sqlalchemy.exc import IntegrityError
 
-from app import crud, db, nbu
+from app import crud, db, rules, services
 from app.crud import CarSummary
+from app.errors import AppError, ConflictError, RateUnavailableError, ValidationError
 from app.models import EXPENSE, SALE_CATEGORY, Car
+# Дати операцій — за київським часом; правила перевірки — спільні з web-адмінкою
+from app.rules import kyiv_today
 
 # Читає змінні з файлу .env (якщо він є) у змінні середовища.
 # У Docker файлу .env немає — там змінні передає docker-compose.
@@ -28,13 +29,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 dp = Dispatcher()
-
-# Дати операцій — за київським часом (контейнер працює в UTC)
-KYIV_TZ = ZoneInfo("Europe/Kyiv")
-
-
-def kyiv_today() -> date:
-    return datetime.now(KYIV_TZ).date()
 
 
 # ---------- Меню й тексти ----------
@@ -115,8 +109,7 @@ CURRENCY_IN = {"UAH": "у гривнях", "USD": "у доларах"}
 KIND_EXPENSE = "expense"
 KIND_SALE = "sale"
 
-# VIN: 17 символів, латиниця й цифри, без I, O, Q
-VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+# Формат тексту в чаті. Самі правила (сума > 0, дата не в майбутньому, VIN тощо) — в app/rules.py.
 # Сума: ціле число або з 1–2 знаками після крапки чи коми, до 10 цифр перед ними
 AMOUNT_RE = re.compile(r"^\d{1,10}([.,]\d{1,2})?$")
 # Дата: 25.11.2026 (також 25-11-2026, 25/11/2026)
@@ -216,15 +209,11 @@ def parse_car(args: str | None) -> tuple[str, str, int, str | None] | str:
     brand = parts[0]
     model = " ".join(parts[1:year_index])
     year = int(parts[year_index])
-    vin = parts[year_index + 1].upper() if len(parts) > year_index + 1 else None
-
-    if len(brand) > 50 or len(model) > 50:
-        return "Марка й модель — до 50 символів кожна."
-    if not 1950 <= year <= kyiv_today().year + 1:
-        return f"Рік {year} виглядає неправильно. Вкажіть рік випуску, напр. 2018."
-    if vin is not None and not VIN_RE.match(vin):
-        return "VIN має містити 17 символів: латинські літери (без I, O, Q) і цифри."
-    return brand, model, year, vin
+    vin = parts[year_index + 1] if len(parts) > year_index + 1 else None
+    try:
+        return rules.check_car(brand, model, year, vin)
+    except ValidationError as error:
+        return error.message
 
 
 def parse_amount(text: str) -> tuple[Decimal, str | None] | str:
@@ -238,9 +227,11 @@ def parse_amount(text: str) -> tuple[Decimal, str | None] | str:
     if description and re.match(r"^\d{3}\b", description):
         return "Схоже, сума написана з пробілом. Напишіть її разом: 1200 ремонт"
 
-    amount = Decimal(parts[0].replace(",", "."))
-    if amount <= 0:
-        return "Сума має бути більшою за 0."
+    try:
+        amount = rules.check_amount(Decimal(parts[0].replace(",", ".")))
+        description = rules.check_description(description)
+    except ValidationError as error:
+        return error.message
     return amount, description
 
 
@@ -253,11 +244,10 @@ def parse_date(text: str) -> date | str:
         day = date(int(match[3]), int(match[2]), int(match[1]))
     except ValueError:
         return f"Такої дати не існує. {DATE_HELP}"
-    if day > kyiv_today():
-        return "Дата не може бути в майбутньому: на неї ще немає курсу НБУ."
-    if day < date(2000, 1, 1):
-        return "Дата занадто давня. Вкажіть дату після 01.01.2000."
-    return day
+    try:
+        return rules.check_operation_date(day)
+    except ValidationError as error:
+        return error.message
 
 
 # ---------- Клавіатури кроків ----------
@@ -384,13 +374,12 @@ async def save_car(message: Message, text: str, state: FSMContext) -> None:
     async with db.session_factory() as session:
         user = await get_db_user(session, message.from_user)
         try:
-            car = await crud.add_car(session, user.id, brand, model, year, vin)
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
+            car = await services.create_car(session, user.id, brand, model, year, vin)
+        except AppError as error:
             await state.set_state(AddCarForm.entering_car)
-            await message.answer(f"Авто з VIN {vin} уже є в базі. Перевірте VIN або /cancel")
+            await message.answer(f"{error.message} Перевірте дані або /cancel")
             return
+        await session.commit()
 
     await state.clear()
     logger.info("Додано авто car_id=%s від user_id=%s", car.id, message.from_user.id)
@@ -484,7 +473,7 @@ async def operation_choose_car(callback: CallbackQuery, state: FSMContext) -> No
     async with db.session_factory() as session:
         user = await get_db_user(session, callback.from_user)
         # Перевіряємо, що авто належить саме цьому користувачу
-        car = await crud.get_user_car(session, user.id, car_id)
+        car = await crud.get_car(session, car_id, owner_id=user.id)
         summary = await crud.car_summary(session, car_id) if car else None
         categories = await crud.list_categories(session, EXPENSE)
         await session.commit()
@@ -605,7 +594,7 @@ async def operation_outdated_button(callback: CallbackQuery) -> None:
 
 @dp.message(OperationForm.entering_amount, F.text, ~F.text.in_(MENU_BUTTONS))
 async def operation_enter_amount(message: Message, state: FSMContext) -> None:
-    """Останній крок: сума й опис → курс НБУ → запис у базу."""
+    """Останній крок: сума й опис → спільна логіка (перевірка, курс НБУ, запис у базу)."""
     parsed = parse_amount(message.text)
     if isinstance(parsed, str):
         await message.answer(parsed, reply_markup=cancel_keyboard().as_markup())
@@ -617,40 +606,39 @@ async def operation_enter_amount(message: Message, state: FSMContext) -> None:
     operation_date = date.fromisoformat(data["op_date"])
     currency = data["currency"]
 
-    try:
-        usd_rate = await asyncio.to_thread(nbu.get_usd_rate, operation_date)
-    except nbu.NbuRateError as error:
-        logger.warning("Курс НБУ недоступний: %s", error)
-        await message.answer(
-            "⚠️ Не вдалося отримати офіційний курс долара НБУ, тому операцію не записано.\n"
-            "Надішліть суму ще раз за хвилину або скасуйте — /cancel"
-        )
-        return
-
     async with db.session_factory() as session:
         user = await get_db_user(session, message.from_user)
-        # lock=True: поки записуємо, інший продаж цього авто чекає
-        car = await crud.get_user_car(session, user.id, data["car_id"], lock=True)
-        if car is None:
-            await state.clear()
-            await message.answer("Авто не знайдено. Почніть заново.")
-            return
-
         if kind == KIND_SALE:
-            if (await crud.car_summary(session, car.id)).sold:
-                await state.clear()
-                await message.answer("✅ Це авто вже продано — другий продаж не записано.")
-                return
             category = await crud.get_category_by_name(session, SALE_CATEGORY)
             category_id, category_name = category.id, category.name
         else:
             category_id, category_name = data["category_id"], data["category_name"]
 
-        transaction = await crud.add_transaction(
-            session, user.id, car.id, category_id,
-            operation_date, amount, currency, usd_rate, description,
-        )
+        try:
+            transaction = await services.create_transaction(
+                session,
+                car_id=data["car_id"],
+                category_id=category_id,
+                operation_date=operation_date,
+                amount=amount,
+                currency=currency,
+                description=description,
+                owner_id=user.id,
+            )
+        except RateUnavailableError as error:
+            # Курс НБУ тимчасово недоступний — лишаємо на цьому кроці, можна надіслати ще раз
+            await message.answer(f"⚠️ {error.message}\nНадішліть суму ще раз або скасуйте — /cancel")
+            return
+        except AppError as error:
+            # Авто не знайдено або вже продане — повторна спроба не допоможе
+            await state.clear()
+            icon = "✅" if isinstance(error, ConflictError) else "⚠️"
+            await message.answer(f"{icon} {error.message}")
+            return
+
+        car = await crud.get_car(session, transaction.car_id)
         summary = await crud.car_summary(session, car.id)
+        usd_rate = transaction.usd_rate
         await session.commit()
 
     await state.clear()
