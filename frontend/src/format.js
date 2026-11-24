@@ -25,3 +25,19 @@ export function formatDate(isoDate) {
   const [year, month, day] = isoDate.split("-");
   return `${day}.${month}.${year}`;
 }
+
+// Українські відмінки після числа: plural(1, "операцію", "операції", "операцій") → "1 операцію",
+// 3 → "3 операції", 5 / 11 / 12 → "5 операцій"
+export function plural(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} ${one}`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
+// Сьогоднішня дата за київським часом у форматі "2026-11-24" — як у боті.
+// Формат en-CA дає саме РРРР-ММ-ДД.
+export function todayInKyiv() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
+}

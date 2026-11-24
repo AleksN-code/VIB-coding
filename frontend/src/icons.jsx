@@ -93,6 +93,35 @@ const PATHS = {
       <path d="M12 10v4.5M12 17.3v.4" />
     </>
   ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: (
+    <>
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z" />
+      <path d="M14 8l3 3" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16M10 7V4.5h4V7" />
+      <path d="M6 7l1 13h10l1-13" />
+      <path d="M10 11v5.5M14 11v5.5" />
+    </>
+  ),
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+      <path d="M12 14.5v2.5" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
+      <path d="M15 8l4 4-4 4M19 12H9" />
+    </>
+  ),
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
 };
 
 // Категорія з бази → іконка

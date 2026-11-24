@@ -138,10 +138,10 @@ code {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 60px;
-  height: 60px;
+  width: 68px;
+  height: 68px;
   border: 1px solid transparent;
-  border-radius: 18px;
+  border-radius: 20px;
   background:
     linear-gradient(rgba(12, 14, 32, 0.92), rgba(12, 14, 32, 0.92)) padding-box,
     linear-gradient(135deg, #22d3ee, #a78bfa, #f472b6) border-box;
@@ -155,7 +155,7 @@ code {
 
 h1 {
   margin: 0;
-  font-size: 40px;
+  font-size: 52px;
   font-weight: 850;
   line-height: 1.05;
   letter-spacing: -0.03em;
@@ -217,12 +217,24 @@ h1 {
   text-align: center;
 }
 
+/* заголовок блоку відділений від цифр тонкою неоновою лінією */
 .overall-head {
-  margin-bottom: 6px;
+  position: relative;
+  margin: 0 10px 10px;
+  padding-bottom: 8px;
   color: var(--muted);
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.overall-head::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.7), rgba(167, 139, 250, 0.7), transparent);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.5);
 }
 
 .overall-time {
@@ -230,15 +242,15 @@ h1 {
   letter-spacing: 0.02em;
 }
 
+/* 4 колонки однакової ширини — за найдовшою сумою, тож при великих сумах усе лишається рівним */
 .overall-stats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .overall-stat {
-  min-width: 82px;
-  padding: 0 18px;
+  min-width: 0;
+  padding: 0 16px;
   border-left: 1px solid rgba(124, 140, 255, 0.14);
 }
 
@@ -262,13 +274,6 @@ h1 {
   white-space: nowrap;
 }
 
-.overall-sub {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.3;
-  font-variant-numeric: tabular-nums;
-}
-
 .overall-stat.tone-income .overall-value {
   color: var(--income);
   text-shadow: 0 0 12px rgba(52, 245, 164, 0.35);
@@ -281,17 +286,20 @@ h1 {
 
 /* ---- Вкладки авто ---- */
 
+/* вкладки — сіткою з колонками однакової ширини (не вужче 260px):
+   повні рядки займають усю ширину, а вкладки останнього неповного рядка
+   лишаються такої ж ширини, як інші, і не розтягуються */
 .tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 12px;
   margin-bottom: 24px;
   padding: 4px 4px 10px;
-  overflow-x: auto;
 }
 
 .tab {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   padding: 8px 16px 8px 8px;
@@ -319,6 +327,7 @@ h1 {
 }
 
 .tab-image {
+  flex: 0 0 auto;
   width: 66px;
   height: 44px;
   border-radius: 10px;
@@ -329,10 +338,23 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
+/* у назві — марка й модель, рік — рядком нижче; якщо назва все одно задовга — «…» */
 .tab-title {
+  overflow: hidden;
   font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -543,7 +565,7 @@ h1 {
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
@@ -683,6 +705,583 @@ tbody tr:hover {
   padding-left: 20px;
 }
 
+/* ---- Кнопки в шапці: Оновити · Вийти ---- */
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ---- Екран входу ---- */
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px 16px;
+  place-items: center;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(400px, 100%);
+  padding: 32px 28px 26px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(rgba(14, 18, 36, 0.85), rgba(14, 18, 36, 0.85)) padding-box,
+    linear-gradient(120deg, rgba(34, 211, 238, 0.8), rgba(167, 139, 250, 0.8), rgba(244, 114, 182, 0.8)) border-box;
+  box-shadow: 0 0 30px rgba(167, 139, 250, 0.25), 0 0 80px rgba(34, 211, 238, 0.12);
+  backdrop-filter: blur(14px);
+  animation: fade-in 0.4s ease-out;
+}
+
+.login-card .logo {
+  align-self: center;
+}
+
+.login-card h1 {
+  font-size: 40px;
+  text-align: center;
+}
+
+.login-card .subtitle {
+  margin: -8px 0 4px;
+  text-align: center;
+}
+
+.login-button {
+  justify-content: center;
+  padding: 12px 18px;
+}
+
+.login-note {
+  margin: 0;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* ---- Кнопки дій ---- */
+
+/* головна дія (Додати, Зберегти) — заповнена, з неоновою рамкою-градієнтом */
+.button-primary {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.16), rgba(167, 139, 250, 0.16)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--violet)) border-box;
+  color: #e8fbff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.26), rgba(167, 139, 250, 0.26)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--violet)) border-box;
+  box-shadow: var(--glow-violet);
+}
+
+/* другорядна дія (Скасувати) */
+.button-ghost {
+  border-color: rgba(140, 150, 180, 0.4);
+  background: transparent;
+  color: var(--text);
+}
+
+.button-ghost:hover:not(:disabled) {
+  background: rgba(140, 150, 180, 0.12);
+  box-shadow: none;
+}
+
+/* небезпечна дія (Видалити) */
+.button-danger {
+  border-color: rgba(255, 107, 154, 0.6);
+  background: rgba(255, 107, 154, 0.12);
+  color: var(--expense);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: rgba(255, 107, 154, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 107, 154, 0.45), 0 0 22px rgba(255, 107, 154, 0.25);
+}
+
+/* кругла кнопка-іконка (змінити, видалити, закрити) */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.icon-button:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+}
+
+.icon-button-danger:hover {
+  border-color: rgba(255, 107, 154, 0.45);
+  background: rgba(255, 107, 154, 0.12);
+  color: var(--expense);
+}
+
+:is(.button, .icon-button, .filter):focus-visible,
+:is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ---- Фільтри й кнопка над таблицею ---- */
+
+.panel-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-note {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.filters {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(9, 12, 26, 0.5);
+}
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.filter:hover {
+  color: var(--text);
+}
+
+.filter-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(124, 140, 255, 0.14);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* активний фільтр — у кольорі свого типу */
+.filter.is-active {
+  --tone: var(--cyan);
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--tone);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tone) 25%, transparent);
+}
+
+.filter-income.is-active {
+  --tone: var(--income);
+}
+
+.filter-expense.is-active {
+  --tone: var(--expense);
+}
+
+/* повідомлення після дії: «Операцію додано» */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(52, 245, 164, 0.45);
+  border-radius: 12px;
+  background: rgba(52, 245, 164, 0.08);
+  color: var(--income);
+  box-shadow: 0 0 18px rgba(52, 245, 164, 0.15);
+  animation: fade-in 0.25s ease-out;
+}
+
+/* колонка з кнопками змінити / видалити */
+.actions-col {
+  width: 1%;
+}
+
+.actions {
+  white-space: nowrap;
+  text-align: right;
+  vertical-align: middle;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Авто: кнопка «Додати авто» у вкладках, дії в картці ---- */
+
+.tab-add {
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-style: dashed;
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.05);
+  color: var(--cyan);
+  font: inherit;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab-add:hover {
+  background: rgba(34, 211, 238, 0.12);
+  box-shadow: var(--glow-cyan);
+}
+
+.car-info {
+  min-width: 0;
+}
+
+.car-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.button-small {
+  padding: 6px 14px;
+  font-size: 14px;
+}
+
+.vin-input {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
+.panel.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.panel.empty p {
+  margin: 0;
+}
+
+/* ---- Вікно поверх сторінки (форма, підтвердження) ---- */
+
+.modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 22px 24px 24px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    linear-gradient(rgba(14, 18, 36, 0.97), rgba(14, 18, 36, 0.97)) padding-box,
+    linear-gradient(120deg, rgba(34, 211, 238, 0.7), rgba(167, 139, 250, 0.7), rgba(244, 114, 182, 0.7)) border-box;
+  color: var(--text);
+  box-shadow: 0 0 40px rgba(167, 139, 250, 0.3), 0 0 90px rgba(34, 211, 238, 0.12);
+}
+
+.modal[open] {
+  animation: fade-in 0.2s ease-out;
+}
+
+.modal-danger {
+  background:
+    linear-gradient(rgba(20, 14, 30, 0.97), rgba(20, 14, 30, 0.97)) padding-box,
+    linear-gradient(120deg, rgba(255, 107, 154, 0.8), rgba(167, 139, 250, 0.6)) border-box;
+  box-shadow: 0 0 40px rgba(255, 107, 154, 0.25);
+}
+
+.modal::backdrop {
+  background: rgba(4, 6, 16, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-head h3 {
+  font-size: 20px;
+}
+
+/* ---- Форма ---- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-car {
+  margin: 0;
+  color: var(--muted);
+}
+
+.form-car strong {
+  color: var(--text);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.field > label,
+.field > legend {
+  padding: 0;
+  margin-bottom: 6px;
+  color: #c9d0e6;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.field > label {
+  margin-bottom: 0;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(9, 12, 26, 0.7);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+textarea {
+  resize: vertical;
+}
+
+:is(input, select, textarea):hover {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+:is(input, select, textarea):focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+/* поле з помилкою */
+:is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--expense);
+  box-shadow: 0 0 0 3px rgba(255, 107, 154, 0.15);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--expense);
+  font-size: 13px;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* сума зі знаком валюти справа */
+.input-suffix {
+  position: relative;
+}
+
+.input-suffix input {
+  padding-right: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-suffix span {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* перемикач з двох варіантів: тип, валюта */
+.segmented {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(9, 12, 26, 0.7);
+}
+
+.segment {
+  --tone: var(--cyan);
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segment.is-checked {
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--tone);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+.segment-income {
+  --tone: var(--income);
+}
+
+.segment-expense {
+  --tone: var(--expense);
+}
+
+.segment.is-disabled:not(.is-checked) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.segment:has(input:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* помилка від backend у формі */
+.form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 107, 154, 0.55);
+  border-radius: 12px;
+  background: rgba(255, 107, 154, 0.1);
+  color: #ffc2d4;
+}
+
+.form-error .icon {
+  margin-top: 2px;
+  color: var(--expense);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- Підтвердження видалення ---- */
+
+.confirm-details {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(9, 12, 26, 0.6);
+}
+
+.confirm-details div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+}
+
+.confirm-details dt {
+  color: var(--muted);
+}
+
+.confirm-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.09);
+  color: #fde7a8;
+}
+
+.warning-box .icon {
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.warning-box p {
+  margin: 0;
+}
+
 /* ---- Анімації ---- */
 
 /* ---- Середня ширина: загальні цифри — окремим рядком під назвою ---- */
@@ -692,9 +1291,11 @@ tbody tr:hover {
     grid-template-columns: 1fr auto;
   }
 
+  /* окремим рядком під назвою — на всю ширину шапки, колонки рівні */
   .overall {
     grid-column: 1 / -1;
     grid-row: 2;
+    justify-self: stretch;
   }
 }
 
@@ -756,30 +1357,41 @@ tbody tr:hover {
     justify-self: stretch;
   }
 
+  .header-actions {
+    justify-content: flex-start;
+  }
+
   h1 {
-    font-size: 30px;
+    font-size: 38px;
   }
 
   .logo {
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
   }
 
   .logo svg {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
   }
 
-  /* на телефоні — компактніше, рядки переносяться по центру */
+  /* на телефоні — дві рівні колонки: Авто · Доходи, Витрати · Баланс */
   .overall-stats {
-    row-gap: 8px;
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: 10px;
   }
 
-  .overall-stat,
-  .overall-stat:first-child {
-    min-width: 0;
+  .overall-stat {
     padding: 0 10px;
+  }
+
+  .overall-stat:nth-child(odd) {
     border-left: none;
+  }
+
+  /* на телефоні вкладка — на всю ширину (одна колонка), довга назва переноситься */
+  .tab-title {
+    white-space: normal;
   }
 
   .car-head {
@@ -795,5 +1407,43 @@ tbody tr:hover {
 
   .card-uah {
     font-size: 26px;
+  }
+
+  /* над таблицею: фільтри й кнопка — на всю ширину */
+  .panel-tools,
+  .panel-tools .button {
+    width: 100%;
+  }
+
+  .panel-tools .button {
+    justify-content: center;
+  }
+
+  .filters {
+    display: flex;
+    width: 100%;
+  }
+
+  .filter {
+    flex: 1;
+    justify-content: center;
+    padding: 6px 8px;
+  }
+
+  .modal {
+    padding: 18px 16px 20px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-details div {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .form-actions .button {
+    flex: 1;
+    justify-content: center;
   }
 }
