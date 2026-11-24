@@ -10,8 +10,11 @@ WORKDIR /bot
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копіюємо тільки код бота (.env в образ не потрапляє — токен передає docker-compose)
+# Копіюємо тільки код бота і міграції бази
+# (.env в образ не потрапляє — секрети передає docker-compose)
 COPY app/ ./app/
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 # Запуск не від root
 RUN useradd --create-home botuser

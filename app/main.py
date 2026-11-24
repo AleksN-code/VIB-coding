@@ -4,8 +4,9 @@ import asyncio
 import logging
 import os
 import re
-from datetime import date
-from decimal import Decimal
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from decimal import ROUND_HALF_UP, Decimal
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -16,8 +17,15 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from dotenv import load_dotenv
 from sqlalchemy.exc import IntegrityError
 
-from app import crud, db
-from app.models import Car
+from app import crud, db, nbu
+from app.models import EXPENSE, Car
+
+# Дати операцій — за київським часом (контейнер працює в UTC)
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
+
+
+def kyiv_today() -> date:
+    return datetime.now(KYIV_TZ).date()
 
 # Читає змінні з файлу .env (якщо він є) у змінні середовища.
 # У Docker файлу .env немає — там змінні передає docker-compose.
@@ -104,8 +112,17 @@ class ExpenseForm(StatesGroup):
 
 
 def format_money(amount: Decimal) -> str:
-    """1234.5 → '1 234.50'"""
-    return f"{amount:,.2f}".replace(",", " ")
+    """Сума для показу — до цілого числа: 1234.5 → '1 235'.
+
+    У базі суми зберігаються з копійками; округлюємо лише те, що бачить користувач.
+    """
+    whole = amount.quantize(Decimal("1"), ROUND_HALF_UP)
+    return f"{whole:,}".replace(",", " ")
+
+
+def format_rate(rate: Decimal) -> str:
+    """Курс для показу — 2 знаки після коми: 45.0811 → '45.08'. У базі — 4 знаки, як у НБУ."""
+    return str(rate.quantize(Decimal("0.01"), ROUND_HALF_UP))
 
 
 def car_title(car: Car) -> str:
@@ -249,7 +266,7 @@ async def cmd_cars(message: Message, state: FSMContext) -> None:
     async with db.session_factory() as session:
         user = await get_db_user(session, message.from_user)
         cars = await crud.list_cars(session, user.id)
-        totals = [await crud.car_total(session, car.id) for car in cars]
+        totals = [await crud.car_expenses_uah(session, car.id) for car in cars]
         await session.commit()
 
     if not cars:
@@ -258,7 +275,7 @@ async def cmd_cars(message: Message, state: FSMContext) -> None:
 
     lines = [
         f"{i}. {car_title(car)}" + (f" (VIN {car.vin})" if car.vin else "")
-        + f" — витрачено {format_money(total)}"
+        + f" — витрачено {format_money(total)} грн"
         for i, (car, total) in enumerate(zip(cars, totals), start=1)
     ]
     await message.answer("Ваші авто:\n\n" + "\n".join(lines))
@@ -303,7 +320,7 @@ async def expense_choose_car(callback: CallbackQuery, state: FSMContext) -> None
         user = await get_db_user(session, callback.from_user)
         # Перевіряємо, що авто належить саме цьому користувачу
         car = await crud.get_user_car(session, user.id, car_id)
-        categories = await crud.list_categories(session)
+        categories = await crud.list_categories(session, EXPENSE)
         await session.commit()
 
     if car is None:
@@ -334,7 +351,7 @@ async def expense_choose_category(callback: CallbackQuery, state: FSMContext) ->
     async with db.session_factory() as session:
         category = await crud.get_category(session, category_id)
 
-    if category is None:
+    if category is None or category.type != EXPENSE:
         await callback.answer("Категорію не знайдено", show_alert=True)
         return
 
@@ -367,6 +384,19 @@ async def expense_enter_amount(message: Message, state: FSMContext) -> None:
     amount, description = parsed
     data = await state.get_data()
 
+    # Поки що витрати — у гривнях і сьогоднішньою датою (вибір дати й валюти — наступний крок)
+    operation_date = kyiv_today()
+    currency = "UAH"
+    try:
+        usd_rate = await asyncio.to_thread(nbu.get_usd_rate, operation_date)
+    except nbu.NbuRateError as error:
+        logger.warning("Курс НБУ недоступний: %s", error)
+        await message.answer(
+            "Не вдалося отримати офіційний курс долара НБУ, тому витрату не записано.\n"
+            "Надішліть суму ще раз за хвилину або скасуйте — /cancel"
+        )
+        return
+
     async with db.session_factory() as session:
         user = await get_db_user(session, message.from_user)
         car = await crud.get_user_car(session, user.id, data["car_id"])
@@ -375,9 +405,10 @@ async def expense_enter_amount(message: Message, state: FSMContext) -> None:
             await message.answer("Авто не знайдено. Почніть заново: /expense")
             return
         transaction = await crud.add_transaction(
-            session, user.id, car.id, data["category_id"], amount, description
+            session, user.id, car.id, data["category_id"],
+            operation_date, amount, currency, usd_rate, description,
         )
-        total = await crud.car_total(session, car.id)
+        total = await crud.car_expenses_uah(session, car.id)
         await session.commit()
 
     await state.clear()
@@ -389,9 +420,11 @@ async def expense_enter_amount(message: Message, state: FSMContext) -> None:
         "✅ Витрату записано\n\n"
         f"Авто: {car_title(car)}\n"
         f"Категорія: {data['category_name']}\n"
-        f"Сума: {format_money(amount)}"
+        f"Дата: {operation_date:%d.%m.%Y}\n"
+        f"Сума: {format_money(transaction.amount_uah)} грн "
+        f"(${format_money(transaction.amount_usd)} за курсом НБУ {format_rate(usd_rate)})"
         + (f"\nОпис: {description}" if description else "")
-        + f"\n\nУсього витрачено на це авто: {format_money(total)}"
+        + f"\n\nУсього витрачено на це авто: {format_money(total)} грн"
     )
 
 
@@ -413,7 +446,7 @@ async def main() -> None:
         raise SystemExit("Не задано DATABASE_URL. Додайте його у файл .env (див. .env.example).")
 
     db.setup_engine(database_url)
-    await db.init_db()
+    await db.check_db()
 
     bot = Bot(token=token)
     # Список команд для кнопки «Меню» біля поля вводу в Telegram

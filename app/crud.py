@@ -1,12 +1,14 @@
-"""Операції з базою: користувачі, авто, категорії, витрати."""
+"""Операції з базою: користувачі, авто, категорії, витрати й доходи."""
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Car, Category, Transaction, User
+from app.models import EXPENSE, Car, Category, Transaction, User
+from app.nbu import to_uah_usd
 
 
 async def get_or_create_user(
@@ -50,8 +52,10 @@ async def get_user_car(session: AsyncSession, user_id: int, car_id: int) -> Car 
     return await session.scalar(stmt)
 
 
-async def list_categories(session: AsyncSession) -> list[Category]:
-    return list(await session.scalars(select(Category).order_by(Category.id)))
+async def list_categories(session: AsyncSession, type_: str) -> list[Category]:
+    """Категорії одного типу: EXPENSE (витрати) або INCOME (доходи)."""
+    stmt = select(Category).where(Category.type == type_).order_by(Category.id)
+    return list(await session.scalars(stmt))
 
 
 async def get_category(session: AsyncSession, category_id: int) -> Category | None:
@@ -63,14 +67,24 @@ async def add_transaction(
     user_id: int,
     car_id: int,
     category_id: int,
+    operation_date: date,
     amount: Decimal,
+    currency: str,
+    usd_rate: Decimal,
     description: str | None,
 ) -> Transaction:
+    """Записує операцію. Суму в другій валюті рахує за курсом НБУ `usd_rate` і фіксує назавжди."""
+    amount_uah, amount_usd = to_uah_usd(amount, currency, usd_rate)
     transaction = Transaction(
         user_id=user_id,
         car_id=car_id,
         category_id=category_id,
+        operation_date=operation_date,
         amount=amount,
+        currency=currency,
+        usd_rate=usd_rate,
+        amount_uah=amount_uah,
+        amount_usd=amount_usd,
         description=description,
     )
     session.add(transaction)
@@ -78,9 +92,11 @@ async def add_transaction(
     return transaction
 
 
-async def car_total(session: AsyncSession, car_id: int) -> Decimal:
-    """Скільки всього витрачено на авто."""
-    stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-        Transaction.car_id == car_id
+async def car_expenses_uah(session: AsyncSession, car_id: int) -> Decimal:
+    """Скільки всього витрачено на авто, у гривнях."""
+    stmt = (
+        select(func.coalesce(func.sum(Transaction.amount_uah), 0))
+        .join(Category, Category.id == Transaction.category_id)
+        .where(Transaction.car_id == car_id, Category.type == EXPENSE)
     )
     return Decimal(await session.scalar(stmt))
