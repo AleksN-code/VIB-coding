@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud, nbu, rules
 from app.errors import ConflictError, NotFoundError, RateUnavailableError, ValidationError
-from app.models import INCOME, Car, Category, Transaction
+from app.models import EXPENSE, INCOME, Car, Category, Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,21 @@ async def _category(session: AsyncSession, category_id: int) -> Category:
     if category is None:
         raise NotFoundError("Категорію не знайдено.")
     return category
+
+
+TYPE_NAMES = {INCOME: "дохід", EXPENSE: "витрата"}
+
+
+def _check_category_type(category: Category, type_: str | None) -> None:
+    """Якщо тип операції вказано (сайт надсилає його з форми) — категорія має йому відповідати."""
+    if type_ is None:
+        return
+    rules.check_operation_type(type_)
+    if category.type != type_:
+        raise ValidationError(
+            f"Категорія «{category.name}» — це {TYPE_NAMES[category.type]}, "
+            f"а операція — {TYPE_NAMES[type_]}. Оберіть іншу категорію."
+        )
 
 
 async def _transaction(session: AsyncSession, transaction_id: int, owner_id: int | None) -> Transaction:
@@ -138,12 +153,16 @@ async def create_transaction(
     amount: Decimal,
     currency: str,
     description: str | None,
+    type_: str | None = None,
     owner_id: int | None = None,
 ) -> Transaction:
     """Нова операція: витрата або продаж — залежно від типу категорії.
 
+    type_ — тип, який обрали у формі (income/expense); категорія має йому відповідати.
     Курс НБУ на дату операції фіксується назавжди, суми в гривнях і доларах — теж.
     """
+    if type_ is not None:
+        rules.check_operation_type(type_)
     amount = rules.check_amount(amount)
     currency = rules.check_currency(currency)
     operation_date = rules.check_operation_date(operation_date)
@@ -153,6 +172,7 @@ async def create_transaction(
     usd_rate = await usd_rate_on(operation_date)
 
     category = await _category(session, category_id)
+    _check_category_type(category, type_)
     # lock=True: поки записуємо, інший продаж цього авто чекає
     car = await _car(session, car_id, owner_id, lock=True)
     if category.type == INCOME and await crud.car_is_sold(session, car.id):
@@ -175,6 +195,7 @@ async def update_transaction(
     amount: Decimal,
     currency: str,
     description: str | None,
+    type_: str | None = None,
     owner_id: int | None = None,
 ) -> Transaction:
     """Змінює операцію. Передаються всі поля — і змінені, і ті, що лишаються як були.
@@ -184,6 +205,8 @@ async def update_transaction(
       лише суми (якщо змінили суму чи валюту).
     - Продаж можна перенести на інше авто, лише якщо те ще не продане.
     """
+    if type_ is not None:
+        rules.check_operation_type(type_)
     amount = rules.check_amount(amount)
     currency = rules.check_currency(currency)
     operation_date = rules.check_operation_date(operation_date)
@@ -197,6 +220,7 @@ async def update_transaction(
 
     old_category = await _category(session, transaction.category_id)
     category = await _category(session, category_id)
+    _check_category_type(category, type_)
     if category.type != old_category.type:
         raise ValidationError(
             "Тип операції змінити не можна: витрата лишається витратою, продаж — продажем. "

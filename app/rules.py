@@ -14,7 +14,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from app.errors import ValidationError
-from app.models import CURRENCIES
+from app.models import CURRENCIES, EXPENSE, INCOME
 
 # Дати операцій — за київським часом (контейнери працюють в UTC)
 KYIV_TZ = ZoneInfo("Europe/Kyiv")
@@ -47,6 +47,13 @@ def check_amount(amount: Decimal) -> Decimal:
     if amount != amount.quantize(CENT):
         raise ValidationError("У сумі може бути не більше двох знаків після коми.")
     return amount
+
+
+def check_operation_type(type_: str) -> str:
+    """Тип операції: income (дохід) або expense (витрата)."""
+    if type_ not in (INCOME, EXPENSE):
+        raise ValidationError("Тип операції має бути income (дохід) або expense (витрата).")
+    return type_
 
 
 def check_currency(currency: str) -> str:

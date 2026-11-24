@@ -1,7 +1,13 @@
 """Backend API для web-адмінки.
 
-Читає фінансові операції з Neon і віддає їх у JSON. React звертається тільки сюди,
+Показує фінансові операції з Neon і змінює їх. React звертається тільки сюди,
 до бази напряму не підключається: DATABASE_URL знає лише backend.
+
+Будь-яка зміна проходить ланцюг:
+    React-форма → цей API → перевірка (app/rules.py, app/services.py) → SQLAlchemy → Neon
+Ту саму перевірку й логіку використовує Telegram-бот.
+
+Авторизації поки немає, тому API доступний лише на цьому ПК (127.0.0.1).
 
 Документація й перевірка в браузері: http://localhost:8000/docs
 """
@@ -15,18 +21,24 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Path, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, PlainSerializer
+from pydantic import BaseModel, Field, PlainSerializer
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.car_images import find_car_image
-from app import db
+from app import db, services
+from app.errors import AppError, ConflictError, NotFoundError, RateUnavailableError, ValidationError
 from app.models import EXPENSE, INCOME, Car, Category, Transaction
 
 load_dotenv()
 
+# Записи API (хто що створив, змінив, видалив) — у логи контейнера: docker compose logs api
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("api")
 
 # Гроші в JSON — числами (1149000.0), а не рядками, щоб frontend одразу міг їх показати.
@@ -47,10 +59,63 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Car Finance — Admin API",
-    description="Read-only API для web-адмінки: фінансові операції по авто з бази Neon PostgreSQL.",
-    version="0.1.0",
+    description=(
+        "API для web-адмінки: перегляд і керування фінансовими операціями по авто "
+        "в базі Neon PostgreSQL. Помилки — JSON з текстом для людини: {\"detail\": \"...\"}."
+    ),
+    version="0.2.0",
     lifespan=lifespan,
 )
+
+
+# ---------- Помилки: завжди JSON з поясненням українською ----------
+
+# Помилки спільної логіки (app/errors.py) → HTTP-статус
+ERROR_STATUS = {
+    ValidationError: 422,  # неправильні дані
+    NotFoundError: 404,  # немає такого авто / операції / категорії
+    ConflictError: 409,  # суперечить записаному: другий продаж авто
+    RateUnavailableError: 503,  # сайт НБУ не відповів
+}
+
+# Якщо дані не пройшли навіть перевірку формату (не число, не та дата, поле відсутнє)
+FIELD_ERRORS = {
+    "body": "Надішліть дані операції у форматі JSON.",
+    "car_id": "Оберіть авто.",
+    "type": "Тип операції має бути income (дохід) або expense (витрата).",
+    "category_id": "Оберіть категорію.",
+    "date": "Вкажіть дату операції у форматі РРРР-ММ-ДД.",
+    "amount": "Сума має бути числом, більшим за 0.",
+    "currency": "Валюта має бути UAH (гривня) або USD (долар).",
+    "description": "Опис має бути текстом.",
+    "transaction_id": "Номер операції має бути цілим числом.",
+    "limit": "limit — ціле число від 1 до 500.",
+}
+
+
+@app.exception_handler(AppError)
+async def app_error(_: Request, error: AppError) -> JSONResponse:
+    """Дію не виконано через дані чи правила обліку — пояснюємо чому."""
+    status_code = next(
+        (code for error_class, code in ERROR_STATUS.items() if isinstance(error, error_class)), 400
+    )
+    return JSONResponse(status_code=status_code, content={"detail": error.message})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(_: Request, error: RequestValidationError) -> JSONResponse:
+    """Замість технічного списку помилок FastAPI — коротке пояснення по кожному полю."""
+    messages = []
+    for item in error.errors():
+        field = str(item["loc"][-1]) if item["loc"] else "body"
+        message = FIELD_ERRORS.get(field, f"Неправильне значення поля {field}.")
+        if message not in messages:
+            messages.append(message)
+    return JSONResponse(
+        status_code=422,
+        # errors — технічні подробиці для розробника (видно в /docs і в DevTools)
+        content={"detail": " ".join(messages), "errors": jsonable_encoder(error.errors())},
+    )
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -67,9 +132,11 @@ class TransactionOut(BaseModel):
     id: int
     date: date
     type: Literal["income", "expense"]
+    car_id: int | None
     car: str | None
+    category_id: int
     category: str
-    # Сума так, як її ввели в боті, і валюта введення
+    # Сума так, як її ввели (у боті чи на сайті), і валюта введення
     amount: Money
     currency: Literal["UAH", "USD"]
     # Курс НБУ на дату операції і суми в обох валютах за ним
@@ -78,6 +145,25 @@ class TransactionOut(BaseModel):
     amount_usd: Money
     description: str | None
     created_at: datetime
+
+
+class TransactionIn(BaseModel):
+    """Дані з форми операції — для створення і для зміни."""
+
+    car_id: int = Field(description="Авто, до якого належить операція")
+    type: Literal["income", "expense"] = Field(description="income — дохід (продаж), expense — витрата")
+    category_id: int = Field(description="Категорія того ж типу — див. GET /api/categories")
+    # Annotated, а не «= Field(...)»: поле й тип мають однакову назву date
+    date: Annotated[date, Field(description="Дата операції; не в майбутньому")]
+    amount: Decimal = Field(description="Сума більше 0, до 2 знаків після коми", examples=[450])
+    currency: Literal["UAH", "USD"] = Field(description="Валюта, в якій введено суму")
+    description: str | None = Field(default=None, description="Опис, до 500 символів")
+
+
+class CategoryOut(BaseModel):
+    id: int
+    name: str
+    type: Literal["income", "expense"]
 
 
 class MoneyOut(BaseModel):
@@ -143,23 +229,131 @@ async def list_transactions(
     async with db.session_factory() as session:
         rows = (await session.execute(stmt)).all()
 
-    return [
-        TransactionOut(
-            id=t.id,
-            date=t.operation_date,
-            type=category.type,
-            car=f"{car.brand} {car.model} {car.year}" if car else None,
-            category=category.name,
-            amount=t.amount,
-            currency=t.currency,
-            usd_rate=t.usd_rate,
-            amount_uah=t.amount_uah,
-            amount_usd=t.amount_usd,
-            description=t.description,
-            created_at=t.created_at,
+    return [transaction_out(t, category, car) for t, category, car in rows]
+
+
+def transaction_out(t: Transaction, category: Category, car: Car | None) -> TransactionOut:
+    return TransactionOut(
+        id=t.id,
+        date=t.operation_date,
+        type=category.type,
+        car_id=t.car_id,
+        car=f"{car.brand} {car.model} {car.year}" if car else None,
+        category_id=t.category_id,
+        category=category.name,
+        amount=t.amount,
+        currency=t.currency,
+        usd_rate=t.usd_rate,
+        amount_uah=t.amount_uah,
+        amount_usd=t.amount_usd,
+        description=t.description,
+        created_at=t.created_at,
+    )
+
+
+async def saved_transaction_out(session: AsyncSession, t: Transaction) -> TransactionOut:
+    """Операція після запису — з назвою категорії й авто, як у списку."""
+    await session.refresh(t)  # created_at ставить база — читаємо його звідти
+    category = await session.get(Category, t.category_id)
+    car = await session.get(Car, t.car_id) if t.car_id else None
+    return transaction_out(t, category, car)
+
+
+ERROR_RESPONSES = {
+    404: {"description": "Авто, операцію чи категорію не знайдено"},
+    409: {"description": "Суперечить записаному: авто вже продано"},
+    422: {"description": "Неправильні дані: сума, дата, тип, категорія"},
+    503: {"description": "Немає курсу НБУ або база недоступна"},
+}
+
+
+@app.post(
+    "/api/transactions",
+    response_model=TransactionOut,
+    status_code=201,
+    summary="Створити операцію",
+    description=(
+        "Перевіряє дані, бере курс НБУ на дату операції і зберігає операцію. "
+        "Дохід (продаж) — лише один на авто."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def create_transaction(body: TransactionIn) -> TransactionOut:
+    async with db.session_factory() as session:
+        t = await services.create_transaction(
+            session,
+            car_id=body.car_id,
+            category_id=body.category_id,
+            operation_date=body.date,
+            amount=body.amount,
+            currency=body.currency,
+            description=body.description,
+            type_=body.type,
         )
-        for t, category, car in rows
-    ]
+        await session.commit()
+        result = await saved_transaction_out(session, t)
+    logger.info("Створено операцію id=%s (%s) car_id=%s", t.id, body.type, t.car_id)
+    return result
+
+
+@app.put(
+    "/api/transactions/{transaction_id}",
+    response_model=TransactionOut,
+    summary="Змінити операцію",
+    description=(
+        "Передаються всі поля форми. Тип змінити не можна. Нова дата — новий курс НБУ; "
+        "та сама дата — курс лишається, перераховуються суми."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def update_transaction(
+    transaction_id: Annotated[int, Path(description="Номер операції")], body: TransactionIn
+) -> TransactionOut:
+    async with db.session_factory() as session:
+        t = await services.update_transaction(
+            session,
+            transaction_id,
+            car_id=body.car_id,
+            category_id=body.category_id,
+            operation_date=body.date,
+            amount=body.amount,
+            currency=body.currency,
+            description=body.description,
+            type_=body.type,
+        )
+        await session.commit()
+        result = await saved_transaction_out(session, t)
+    logger.info("Змінено операцію id=%s", transaction_id)
+    return result
+
+
+@app.delete(
+    "/api/transactions/{transaction_id}",
+    status_code=204,
+    summary="Видалити операцію",
+    description="Назавжди. Якщо це продаж — авто знову стає непроданим.",
+    responses={404: ERROR_RESPONSES[404]},
+)
+async def delete_transaction(
+    transaction_id: Annotated[int, Path(description="Номер операції")],
+) -> Response:
+    async with db.session_factory() as session:
+        await services.delete_transaction(session, transaction_id)
+        await session.commit()
+    logger.info("Видалено операцію id=%s", transaction_id)
+    return Response(status_code=204)
+
+
+@app.get(
+    "/api/categories",
+    response_model=list[CategoryOut],
+    summary="Категорії операцій",
+    description="Для форми: expense — витрати, income — доходи (продаж авто).",
+)
+async def list_categories() -> list[CategoryOut]:
+    async with db.session_factory() as session:
+        categories = (await session.scalars(select(Category).order_by(Category.id))).all()
+    return [CategoryOut(id=c.id, name=c.name, type=c.type) for c in categories]
 
 
 @app.get(
