@@ -49,6 +49,7 @@ async function request(method, path, body) {
 export const fetchSummary = () => request("GET", "/api/summary");
 export const fetchCars = () => request("GET", "/api/cars");
 export const fetchCategories = () => request("GET", "/api/categories");
+export const fetchUsers = () => request("GET", "/api/users");
 export const fetchTransactions = (carId) =>
   request("GET", carId == null ? "/api/transactions" : `/api/transactions?car_id=${encodeURIComponent(carId)}`);
 
@@ -57,3 +58,9 @@ export const fetchTransactions = (carId) =>
 export const createTransaction = (data) => request("POST", "/api/transactions", data);
 export const updateTransaction = (id, data) => request("PUT", `/api/transactions/${encodeURIComponent(id)}`, data);
 export const deleteTransaction = (id) => request("DELETE", `/api/transactions/${encodeURIComponent(id)}`);
+
+// data: { owner_id, brand, model, year, vin }
+export const createCar = (data) => request("POST", "/api/cars", data);
+export const updateCar = (id, data) => request("PUT", `/api/cars/${encodeURIComponent(id)}`, data);
+// Разом з усіма операціями авто
+export const deleteCar = (id) => request("DELETE", `/api/cars/${encodeURIComponent(id)}`);

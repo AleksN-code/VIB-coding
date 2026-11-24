@@ -21,13 +21,13 @@ import logging
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud, nbu, rules
 from app.errors import ConflictError, NotFoundError, RateUnavailableError, ValidationError
-from app.models import EXPENSE, INCOME, Car, Category, Transaction
+from app.models import EXPENSE, INCOME, Car, Category, Transaction, User
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,13 @@ async def _car(session: AsyncSession, car_id: int, owner_id: int | None, lock: b
     if car is None:
         raise NotFoundError("Авто не знайдено.")
     return car
+
+
+async def _user(session: AsyncSession, user_id: int) -> User:
+    user = await session.get(User, user_id)
+    if user is None:
+        raise NotFoundError("Власника не знайдено — оберіть користувача зі списку.")
+    return user
 
 
 async def _category(session: AsyncSession, category_id: int) -> Category:
@@ -107,6 +114,7 @@ async def create_car(
 ) -> Car:
     """Нове авто користувача owner_id."""
     brand, model, year, vin = rules.check_car(brand, model, year, vin)
+    await _user(session, owner_id)
     car = Car(user_id=owner_id)
     await _save_car(session, car, brand=brand, model=model, year=year, vin=vin)
     return car
@@ -120,11 +128,24 @@ async def update_car(
     year: int,
     vin: str | None,
     owner_id: int | None = None,
+    new_owner_id: int | None = None,
 ) -> Car:
-    """Змінює марку, модель, рік і VIN. Операції авто не змінюються."""
+    """Змінює марку, модель, рік і VIN; суми операцій не змінюються.
+
+    new_owner_id — передати авто іншому користувачу (лише web-адмінка). Операції авто
+    переходять разом з ним: вони завжди належать власнику авто.
+    """
     brand, model, year, vin = rules.check_car(brand, model, year, vin)
     car = await _car(session, car_id, owner_id, lock=True)
-    await _save_car(session, car, brand=brand, model=model, year=year, vin=vin)
+    fields = {"brand": brand, "model": model, "year": year, "vin": vin}
+    if new_owner_id is not None and new_owner_id != car.user_id:
+        await _user(session, new_owner_id)
+        fields["user_id"] = new_owner_id
+    await _save_car(session, car, **fields)
+    if "user_id" in fields:
+        await session.execute(
+            update(Transaction).where(Transaction.car_id == car.id).values(user_id=new_owner_id)
+        )
     return car
 
 

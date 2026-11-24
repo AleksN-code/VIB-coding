@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { fetchCars, fetchCategories, fetchSummary, fetchTransactions } from "./api.js";
+import { fetchCars, fetchCategories, fetchSummary, fetchTransactions, fetchUsers } from "./api.js";
+import CarForm from "./CarForm.jsx";
+import DeleteCarDialog from "./DeleteCarDialog.jsx";
 import DeleteTransactionDialog from "./DeleteTransactionDialog.jsx";
-import { formatDate, formatRate, formatUah, formatUsd } from "./format.js";
+import { formatDate, formatRate, formatUah, formatUsd, plural } from "./format.js";
 import { CATEGORY_ICON, Icon } from "./icons.jsx";
 import TransactionForm from "./TransactionForm.jsx";
 
@@ -18,13 +20,40 @@ function carIdFromHash() {
   return match ? Number(match[1]) : null;
 }
 
+// Повідомлення після дії («Авто додано») — зникає само через 5 секунд
+function useNotice() {
+  const [notice, setNotice] = useState(null);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  return [notice, setNotice];
+}
+
+function Notice({ text }) {
+  return (
+    text && (
+      <div className="notice" role="status">
+        <Icon name="check" />
+        {text}
+      </div>
+    )
+  );
+}
+
 export default function App() {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
   const [cars, setCars] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [users, setUsers] = useState([]);
   const [selectedId, setSelectedId] = useState(carIdFromHash);
+  // Вікна для авто: форма (нове або зміна) і підтвердження видалення
+  const [carDialog, setCarDialog] = useState(null); // null | { car: null | {...} }
+  const [deletingCar, setDeletingCar] = useState(null);
+  const [notice, setNotice] = useNotice();
   const [loadedAt, setLoadedAt] = useState(null);
   // Лічильник оновлень: після «Оновити» вкладка авто заново завантажує свої операції
   const [reloadKey, setReloadKey] = useState(0);
@@ -33,14 +62,16 @@ export default function App() {
     setStatus("loading");
     setError(null);
     try {
-      const [summaryData, carsData, categoriesData] = await Promise.all([
+      const [summaryData, carsData, categoriesData, usersData] = await Promise.all([
         fetchSummary(),
         fetchCars(),
         fetchCategories(),
+        fetchUsers(),
       ]);
       setSummary(summaryData);
       setCars(carsData);
       setCategories(categoriesData);
+      setUsers(usersData);
       setLoadedAt(new Date());
       setReloadKey((key) => key + 1);
       setStatus("ready");
@@ -62,6 +93,30 @@ export default function App() {
 
   // Якщо в адресі немає авто або такого вже немає — відкриваємо перше
   const selectedCar = cars.find((car) => car.id === selectedId) ?? cars[0] ?? null;
+
+  async function handleCarSaved(saved, isNew) {
+    setCarDialog(null);
+    setNotice(isNew ? `Авто ${saved.title} додано.` : `Зміни авто ${saved.title} збережено.`);
+    await load();
+    if (isNew) {
+      // Нове авто вже є в списку — відкриваємо його вкладку
+      window.location.hash = `car-${saved.id}`;
+    }
+  }
+
+  function handleCarDeleted(car) {
+    setDeletingCar(null);
+    const removed = car.transactions_count;
+    setNotice(
+      removed > 0
+        ? `Авто ${car.title} видалено разом з ${plural(removed, "операцією", "операціями", "операціями")}.`
+        : `Авто ${car.title} видалено.`,
+    );
+    // Вкладки видаленого авто більше немає — повертаємось до першого авто
+    window.history.replaceState(null, "", window.location.pathname);
+    setSelectedId(null);
+    load();
+  }
 
   return (
     <div className="page">
@@ -85,13 +140,21 @@ export default function App() {
       {status === "error" && <ErrorBox message={error} onRetry={load} />}
       {status === "loading" && !summary && <p className="muted">Завантаження даних…</p>}
 
+      <Notice text={notice} />
+
       {summary && (
         <>
           {cars.length === 0 ? (
-            <p className="panel muted empty">Авто ще немає. Додайте авто в Telegram-боті кнопкою «Додати авто».</p>
+            <div className="panel empty">
+              <p className="muted">Авто ще немає. Додайте перше авто тут або в Telegram-боті.</p>
+              <button type="button" className="button button-primary" onClick={() => setCarDialog({ car: null })}>
+                <Icon name="plus" />
+                Додати авто
+              </button>
+            </div>
           ) : (
             <>
-              <CarTabs cars={cars} selectedId={selectedCar?.id} />
+              <CarTabs cars={cars} selectedId={selectedCar?.id} onAdd={() => setCarDialog({ car: null })} />
               {selectedCar && (
                 <CarView
                   key={selectedCar.id}
@@ -101,11 +164,20 @@ export default function App() {
                   reloadKey={reloadKey}
                   // Після зміни даних — заново завантажити загальні цифри, картки авто й таблицю
                   onChanged={load}
+                  onEditCar={() => setCarDialog({ car: selectedCar })}
+                  onDeleteCar={() => setDeletingCar(selectedCar)}
                 />
               )}
             </>
           )}
         </>
+      )}
+
+      {carDialog && (
+        <CarForm car={carDialog.car} users={users} onClose={() => setCarDialog(null)} onSaved={handleCarSaved} />
+      )}
+      {deletingCar && (
+        <DeleteCarDialog car={deletingCar} onClose={() => setDeletingCar(null)} onDeleted={handleCarDeleted} />
       )}
     </div>
   );
@@ -113,7 +185,7 @@ export default function App() {
 
 // Загальні цифри по всіх авто — компактні колонки в шапці, поруч із заголовком
 function OverallLine({ summary, carsCount, loadedAt }) {
-  const balanceTone = summary.balance.uah < 0 ? "expense" : "income";
+  const balanceTone = summary.balance.usd < 0 ? "expense" : "income";
   return (
     <section className="overall" aria-label="Усього по всіх авто">
       <div className="overall-head">
@@ -130,17 +202,17 @@ function OverallLine({ summary, carsCount, loadedAt }) {
   );
 }
 
+// У шапці — лише долари: коротко й рівно. Гривні — у картках авто й у таблиці.
 function OverallStat({ label, tone, money, value }) {
   return (
     <div className={`overall-stat ${tone ? `tone-${tone}` : ""}`}>
       <div className="overall-label">{label}</div>
-      <div className="overall-value">{money ? formatUah(money.uah) : value}</div>
-      {money && <div className="overall-sub">{formatUsd(money.usd)}</div>}
+      <div className="overall-value">{money ? formatUsd(money.usd) : value}</div>
     </div>
   );
 }
 
-function CarTabs({ cars, selectedId }) {
+function CarTabs({ cars, selectedId, onAdd }) {
   return (
     <nav className="tabs" aria-label="Авто">
       {cars.map((car) => (
@@ -160,6 +232,10 @@ function CarTabs({ cars, selectedId }) {
           </span>
         </a>
       ))}
+      <button type="button" className="tab tab-add" onClick={onAdd}>
+        <Icon name="plus" />
+        Додати авто
+      </button>
     </nav>
   );
 }
@@ -224,7 +300,7 @@ function CarImage({ car, className }) {
   return <img className={className} src={car.image_url} alt={car.title} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-function CarView({ car, cars, categories, reloadKey, onChanged }) {
+function CarView({ car, cars, categories, reloadKey, onChanged, onEditCar, onDeleteCar }) {
   const [status, setStatus] = useState("loading");
   // null — ще не завантажено; після першого завантаження таблиця лишається видимою під час оновлень
   const [transactions, setTransactions] = useState(null);
@@ -233,7 +309,7 @@ function CarView({ car, cars, categories, reloadKey, onChanged }) {
   // Відкрите вікно: форма (нова операція або зміна) чи підтвердження видалення
   const [editing, setEditing] = useState(null); // null | { transaction: null | {...} }
   const [deleting, setDeleting] = useState(null); // null | операція
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useNotice();
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -250,13 +326,6 @@ function CarView({ car, cars, categories, reloadKey, onChanged }) {
   useEffect(() => {
     load();
   }, [load, reloadKey]);
-
-  // Повідомлення «Операцію додано» зникає саме
-  useEffect(() => {
-    if (!notice) return undefined;
-    const timer = setTimeout(() => setNotice(null), 5000);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   function handleSaved(saved) {
     const isNew = editing.transaction == null;
@@ -294,14 +363,25 @@ function CarView({ car, cars, categories, reloadKey, onChanged }) {
             </figcaption>
           )}
         </figure>
-        <div>
+        <div className="car-info">
           <h2>{car.title}</h2>
           {car.vin && <p className="muted">VIN: {car.vin}</p>}
+          <p className="muted">Власник: {car.owner}</p>
           <p className={`car-status ${car.sold ? "is-sold" : "in-work"}`}>
             <Icon name={car.sold ? "sold" : "inWork"} />
             {car.sold ? `Продано ${formatDate(car.sale_date)}` : "В роботі — ще не продано"}
           </p>
           <p className="muted">Операцій: {car.transactions_count}</p>
+          <div className="car-actions">
+            <button type="button" className="button button-ghost button-small" onClick={onEditCar}>
+              <Icon name="edit" />
+              Змінити авто
+            </button>
+            <button type="button" className="button button-danger button-small" onClick={onDeleteCar}>
+              <Icon name="trash" />
+              Видалити авто
+            </button>
+          </div>
         </div>
       </div>
 
@@ -352,12 +432,7 @@ function CarView({ car, cars, categories, reloadKey, onChanged }) {
           </div>
         </div>
 
-        {notice && (
-          <div className="notice" role="status">
-            <Icon name="check" />
-            {notice}
-          </div>
-        )}
+        <Notice text={notice} />
         {status === "error" && <ErrorBox message={error} onRetry={load} />}
         {transactions && status !== "error" && (
           <TransactionsTable

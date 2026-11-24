@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.car_images import find_car_image
 from app import db, services
 from app.errors import AppError, ConflictError, NotFoundError, RateUnavailableError, ValidationError
-from app.models import EXPENSE, INCOME, Car, Category, Transaction
+from app.models import EXPENSE, INCOME, Car, Category, Transaction, User
 
 load_dotenv()
 
@@ -88,7 +88,11 @@ FIELD_ERRORS = {
     "amount": "Сума має бути числом, більшим за 0.",
     "currency": "Валюта має бути UAH (гривня) або USD (долар).",
     "description": "Опис має бути текстом.",
-    "transaction_id": "Номер операції має бути цілим числом.",
+    "owner_id": "Оберіть власника авто.",
+    "brand": "Вкажіть марку авто.",
+    "model": "Вкажіть модель авто.",
+    "year": "Рік випуску має бути числом, наприклад 2018.",
+    "vin": "VIN має бути текстом.",
     "limit": "limit — ціле число від 1 до 500.",
 }
 
@@ -108,7 +112,11 @@ async def request_validation_error(_: Request, error: RequestValidationError) ->
     messages = []
     for item in error.errors():
         field = str(item["loc"][-1]) if item["loc"] else "body"
-        message = FIELD_ERRORS.get(field, f"Неправильне значення поля {field}.")
+        if item["loc"] and item["loc"][0] == "path":
+            # /api/transactions/abc, /api/cars/abc
+            message = "Номер в адресі запиту має бути цілим числом."
+        else:
+            message = FIELD_ERRORS.get(field, f"Неправильне значення поля {field}.")
         if message not in messages:
             messages.append(message)
     return JSONResponse(
@@ -178,6 +186,36 @@ class SummaryOut(BaseModel):
     transactions_count: int
 
 
+class UserOut(BaseModel):
+    """Користувач Telegram-бота — власник авто."""
+
+    id: int
+    name: str
+
+
+class CarIn(BaseModel):
+    """Дані з форми авто — для створення і для зміни."""
+
+    owner_id: int = Field(description="Власник — користувач бота, див. GET /api/users")
+    brand: str = Field(description="Марка, до 50 символів", examples=["BMW"])
+    model: str = Field(description="Модель, до 50 символів", examples=["X5"])
+    year: int = Field(description="Рік випуску", examples=[2018])
+    vin: str | None = Field(default=None, description="Необов'язково: 17 символів, без I, O, Q")
+
+
+class CarSavedOut(BaseModel):
+    """Авто після створення чи зміни. Повну картку з сумами дає GET /api/cars."""
+
+    id: int
+    title: str
+    brand: str
+    model: str
+    year: int
+    vin: str | None
+    owner_id: int
+    owner: str
+
+
 class CarOut(BaseModel):
     id: int
     title: str
@@ -185,6 +223,8 @@ class CarOut(BaseModel):
     model: str
     year: int
     vin: str | None
+    owner_id: int
+    owner: str
     sold: bool
     sale_date: date | None
     expenses: MoneyOut
@@ -416,8 +456,12 @@ async def list_cars() -> list[CarOut]:
         .group_by(Transaction.car_id, Category.type)
     )
     async with db.session_factory() as session:
-        cars = (await session.scalars(select(Car).order_by(Car.id))).all()
+        cars_rows = (
+            await session.execute(select(Car, User).join(User, User.id == Car.user_id).order_by(Car.id))
+        ).all()
         totals_rows = (await session.execute(totals_stmt)).all()
+    cars = [car for car, _ in cars_rows]
+    owners = {car.id: user for car, user in cars_rows}
 
     # {car_id: {type: (uah, usd, count, last_date)}}
     totals: dict[int, dict[str, tuple]] = {}
@@ -443,6 +487,8 @@ async def list_cars() -> list[CarOut]:
                 model=car.model,
                 year=car.year,
                 vin=car.vin,
+                owner_id=car.user_id,
+                owner=user_name(owners[car.id]),
                 sold=sold,
                 sale_date=sale_date,
                 expenses=MoneyOut(uah=exp_uah, usd=exp_usd),
@@ -455,3 +501,97 @@ async def list_cars() -> list[CarOut]:
             )
         )
     return result
+
+
+# ---------- Власники й авто ----------
+
+
+def user_name(user: User) -> str:
+    """Як показувати власника: ім'я з Telegram і @username."""
+    name = user.first_name or "Без імені"
+    return f"{name} (@{user.username})" if user.username else name
+
+
+def car_saved_out(car: Car, owner: User) -> CarSavedOut:
+    return CarSavedOut(
+        id=car.id,
+        title=f"{car.brand} {car.model} {car.year}",
+        brand=car.brand,
+        model=car.model,
+        year=car.year,
+        vin=car.vin,
+        owner_id=car.user_id,
+        owner=user_name(owner),
+    )
+
+
+CAR_ERROR_RESPONSES = {
+    404: {"description": "Авто чи власника не знайдено"},
+    409: {"description": "Авто з таким VIN уже є"},
+    422: {"description": "Неправильні дані: марка, модель, рік, VIN"},
+}
+
+
+@app.get(
+    "/api/users",
+    response_model=list[UserOut],
+    summary="Користувачі бота — власники авто",
+    description="Для поля «Власник» у формі авто.",
+)
+async def list_users() -> list[UserOut]:
+    async with db.session_factory() as session:
+        users = (await session.scalars(select(User).order_by(User.id))).all()
+    return [UserOut(id=u.id, name=user_name(u)) for u in users]
+
+
+@app.post(
+    "/api/cars",
+    response_model=CarSavedOut,
+    status_code=201,
+    summary="Додати авто",
+    description="Власник бачитиме це авто і в Telegram-боті.",
+    responses=CAR_ERROR_RESPONSES,
+)
+async def create_car(body: CarIn) -> CarSavedOut:
+    async with db.session_factory() as session:
+        car = await services.create_car(session, body.owner_id, body.brand, body.model, body.year, body.vin)
+        await session.commit()
+        owner = await session.get(User, car.user_id)
+    logger.info("Додано авто id=%s власник user_id=%s", car.id, car.user_id)
+    return car_saved_out(car, owner)
+
+
+@app.put(
+    "/api/cars/{car_id}",
+    response_model=CarSavedOut,
+    summary="Змінити авто",
+    description=(
+        "Марка, модель, рік, VIN і власник. Якщо змінити власника — операції авто "
+        "переходять до нього разом з авто."
+    ),
+    responses=CAR_ERROR_RESPONSES,
+)
+async def update_car(car_id: Annotated[int, Path(description="Номер авто")], body: CarIn) -> CarSavedOut:
+    async with db.session_factory() as session:
+        car = await services.update_car(
+            session, car_id, body.brand, body.model, body.year, body.vin, new_owner_id=body.owner_id
+        )
+        await session.commit()
+        owner = await session.get(User, car.user_id)
+    logger.info("Змінено авто id=%s", car_id)
+    return car_saved_out(car, owner)
+
+
+@app.delete(
+    "/api/cars/{car_id}",
+    status_code=204,
+    summary="Видалити авто",
+    description="Назавжди, разом з усіма операціями авто (витрати й продаж).",
+    responses={404: CAR_ERROR_RESPONSES[404]},
+)
+async def delete_car(car_id: Annotated[int, Path(description="Номер авто")]) -> Response:
+    async with db.session_factory() as session:
+        removed = await services.delete_car(session, car_id)
+        await session.commit()
+    logger.info("Видалено авто id=%s разом з %s операціями", car_id, removed)
+    return Response(status_code=204)
